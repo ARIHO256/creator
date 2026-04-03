@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 import AdBuilder from "./AdBuilder_SupplierFacing";
 
 /**
@@ -450,92 +449,216 @@ function BarList({ title, subtitle, rows }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-function toNumber(value, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function titleCaseStatus(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return "Draft";
-  return normalized
-    .split("_")
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(" ");
-}
-
-function mapAdzCampaignToDashboardAd(record) {
-  const data = record?.data && typeof record.data === "object" && !Array.isArray(record.data) ? record.data : {};
-  const offers = Array.isArray(data?.offers) ? data.offers : [];
-  const status = titleCaseStatus(record?.status || data?.status);
-  const computedLowStock = offers.some((offer) => offer?.type === "PRODUCT" && toNumber(offer?.stockLeft, 0) > 0 && toNumber(offer?.stockLeft, 0) <= 5);
-
-  return {
-    id: String(record?.id || ""),
-    campaignName: String(data?.campaignName || data?.title || record?.title || "Untitled campaign"),
-    campaignSubtitle: String(data?.campaignSubtitle || data?.subtitle || ""),
-    supplier: data?.supplier && typeof data.supplier === "object"
-      ? {
-          name: String(data.supplier.name || "Supplier"),
-          category: String(data.supplier.category || "General"),
-          logoUrl: String(data.supplier.logoUrl || ""),
+const DEMO_ADS = [
+  {
+    id: "ADZ-2201",
+    campaignName: "Valentine Glow Week",
+    campaignSubtitle: "Limited-time drops · Host-first",
+    supplier: {
+      name: "GlowUp Hub",
+      category: "Beauty",
+      logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "Amina K.",
+      handle: "@amina.dealz",
+      avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    status: "Generated",
+    platforms: ["Instagram", "TikTok"],
+    startISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    compensation: { type: "Commission", commissionRate: 0.12 },
+    offers: [
+      {
+        id: "O-100",
+        type: "PRODUCT",
+        name: "Glow Serum (30ml)",
+        currency: "UGX",
+        price: 38000,
+        basePrice: 52000,
+        stockLeft: 12,
+        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "RETAIL",
+        wholesale: {
+          moq: 10,
+          step: 5,
+          leadTimeLabel: "Ships in 3–5 days",
+          tiers: [
+            { minQty: 10, unitPrice: 32000 },
+            { minQty: 25, unitPrice: 29500 },
+            { minQty: 50, unitPrice: 27000 }
+          ]
         }
-      : { name: "Supplier", category: "General", logoUrl: "" },
-    creator: data?.creator && typeof data.creator === "object"
-      ? {
-          name: String(data.creator.name || "Creator"),
-          handle: String(data.creator.handle || "@creator"),
-          avatarUrl: String(data.creator.avatarUrl || ""),
-          verified: Boolean(data.creator.verified),
+      },
+      {
+        id: "O-101",
+        type: "SERVICE",
+        name: "Skin consult (30min)",
+        currency: "UGX",
+        price: 60000,
+        stockLeft: -1,
+        posterUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        serviceMeta: { durationMins: 30, bookingType: "Instant" }
+      }
+    ],
+    generated: true,
+    hasBrokenLink: false,
+    lowStock: false,
+    lock: { locked: false, label: "", reason: "" },
+    impressions7d: 410000,
+    clicks7d: 14800,
+    orders7d: 920,
+    revenue7d: 34500000,
+    currency: "UGX"
+  },
+  {
+    id: "ADZ-2202",
+    campaignName: "Back-to-Work Essentials",
+    campaignSubtitle: "Bags & Accessories · Campus-ready",
+    supplier: {
+      name: "Urban Supply",
+      category: "Accessories",
+      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "Chris M.",
+      handle: "@chrismarket",
+      avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Invite-Only",
+    approvalMode: "Manual",
+    status: "Live",
+    platforms: ["TikTok", "YouTube"],
+    startISO: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 250, currency: "USD" },
+    offers: [
+      {
+        id: "O-110",
+        type: "PRODUCT",
+        name: "Laptop Backpack",
+        currency: "UGX",
+        price: 145000,
+        basePrice: 190000,
+        stockLeft: 4,
+        posterUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL"],
+        defaultSellingMode: "RETAIL"
+      },
+      {
+        id: "O-111",
+        type: "PRODUCT",
+        name: "USB-C Hub",
+        currency: "UGX",
+        price: 68000,
+        stockLeft: 33,
+        posterUrl: "https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 10,
+          step: 5,
+          leadTimeLabel: "Ships in 2–4 days",
+          tiers: [
+            { minQty: 10, unitPrice: 52000 },
+            { minQty: 25, unitPrice: 49000 },
+            { minQty: 50, unitPrice: 46500 }
+          ]
         }
-      : { name: "(Supplier-hosted)", handle: "@supplier", avatarUrl: "", verified: false },
-    hostRole: String(data?.hostRole || "Supplier"),
-    creatorUsage: String(data?.creatorUsage || "I will use a Creator"),
-    collabMode: String(data?.collabMode || "Open for Collabs"),
-    approvalMode: String(data?.approvalMode || "Manual"),
-    status,
-    platforms: Array.isArray(data?.platforms) ? data.platforms.map((item) => String(item)) : [],
-    startISO: String(data?.startISO || data?.startsAtISO || record?.createdAt || new Date().toISOString()),
-    endISO: String(data?.endISO || data?.endsAtISO || record?.updatedAt || new Date().toISOString()),
-    timezone: String(data?.timezone || "Africa/Kampala"),
-    heroImageUrl: String(data?.heroImageUrl || ""),
-    heroIntroVideoUrl: String(data?.heroIntroVideoUrl || SAMPLE_VIDEO),
-    compensation: data?.compensation && typeof data.compensation === "object"
-      ? data.compensation
-      : { type: "Commission", commissionRate: 0 },
-    offers: offers.map((offer, index) => ({
-      id: String(offer?.id || `O-${index + 1}`),
-      type: String(offer?.type || "PRODUCT"),
-      name: String(offer?.name || `Offer ${index + 1}`),
-      currency: String(offer?.currency || record?.currency || "USD"),
-      price: toNumber(offer?.price),
-      basePrice: toNumber(offer?.basePrice),
-      stockLeft: toNumber(offer?.stockLeft, -1),
-      posterUrl: String(offer?.posterUrl || ""),
-      videoUrl: String(offer?.videoUrl || SAMPLE_VIDEO),
-      sellingModes: Array.isArray(offer?.sellingModes) ? offer.sellingModes : undefined,
-      defaultSellingMode: offer?.defaultSellingMode,
-      wholesale: offer?.wholesale,
-      serviceMeta: offer?.serviceMeta,
-    })),
-    generated: Boolean(data?.generated || ["Generated", "Scheduled", "Live"].includes(status)),
-    hasBrokenLink: Boolean(data?.hasBrokenLink),
-    lowStock: Boolean(data?.lowStock ?? computedLowStock),
-    lock:
-      data?.lock && typeof data.lock === "object"
-        ? {
-            locked: Boolean(data.lock.locked),
-            label: String(data.lock.label || ""),
-            reason: String(data.lock.reason || ""),
-          }
-        : { locked: false, label: "", reason: "" },
-    impressions7d: toNumber(data?.impressions7d),
-    clicks7d: toNumber(data?.clicks7d),
-    orders7d: toNumber(data?.orders7d),
-    revenue7d: toNumber(data?.revenue7d),
-    currency: String(record?.currency || data?.currency || "USD"),
-  };
-}
+      }
+    ],
+    generated: true,
+    hasBrokenLink: false,
+    lowStock: true,
+    lock: { locked: false, label: "", reason: "" },
+    impressions7d: 580000,
+    clicks7d: 19200,
+    orders7d: 1140,
+    revenue7d: 49800000,
+    currency: "UGX"
+  },
+  {
+    id: "ADZ-2203",
+    campaignName: "Home Essentials Drop",
+    campaignSubtitle: "Kitchen upgrade · Bundles",
+    supplier: {
+      name: "HomePro",
+      category: "Home",
+      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "(Supplier-hosted)",
+      handle: "@homepro",
+      avatarUrl: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    hostRole: "Supplier",
+    creatorUsage: "I will NOT use a Creator",
+    collabMode: "(n/a)",
+    approvalMode: "Manual",
+    status: "Pending approval",
+    platforms: ["TikTok"],
+    startISO: new Date(Date.now() + 34 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 35 * 3600 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    compensation: { type: "Flat fee", flatFee: 150, currency: "GBP" },
+    offers: [
+      {
+        id: "O-120",
+        type: "PRODUCT",
+        name: "6-Speed Blender",
+        currency: "UGX",
+        price: 240000,
+        stockLeft: 10,
+        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 3,
+          step: 1,
+          leadTimeLabel: "Ships in 3–6 days",
+          tiers: [
+            { minQty: 3, unitPrice: 210000 },
+            { minQty: 6, unitPrice: 199000 },
+            { minQty: 12, unitPrice: 189000 }
+          ]
+        }
+      }
+    ],
+    generated: false,
+    hasBrokenLink: true,
+    lowStock: false,
+    lock: { locked: true, label: "Edit locked", reason: "Locked while pending approval (manual)." },
+    impressions7d: 18000,
+    clicks7d: 430,
+    orders7d: 18,
+    revenue7d: 2100000,
+    currency: "UGX"
+  }
+];
 
 /* ----------------------------- Performance drawer --------------------------- */
 
@@ -1154,9 +1277,8 @@ export default function SupplierAdzDashboardPage() {
   const [drawer, setDrawer] = useState(null); // null | calendar | quickLinks | performance | builder
   const [drawerData, setDrawerData] = useState(undefined); // adId
 
-  const [ads, setAds] = useState([]);
-  const [selectedId, setSelectedId] = useState("");
-  const [dataState, setDataState] = useState("loading");
+  const [ads, setAds] = useState(DEMO_ADS);
+  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0] || null, [ads, selectedId]);
 
   const [q, setQ] = useState("");
@@ -1164,29 +1286,6 @@ export default function SupplierAdzDashboardPage() {
   const [onlyWholesaleReady, setOnlyWholesaleReady] = useState(false);
 
   const [pendingGenerateId, setPendingGenerateId] = useState(null);
-
-  useEffect(() => {
-    let mounted = true;
-    setDataState("loading");
-    sellerBackendApi
-      .getAdzCampaigns()
-      .then((rows) => {
-        if (!mounted) return;
-        const mapped = Array.isArray(rows) ? rows.map(mapAdzCampaignToDashboardAd).filter((ad) => ad.id) : [];
-        setAds(mapped);
-        setSelectedId((prev) => (prev && mapped.some((ad) => ad.id === prev) ? prev : mapped[0]?.id || ""));
-        setDataState("ready");
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setAds([]);
-        setSelectedId("");
-        setDataState("error");
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const safeNav = (url) => {
     if (!url) return;
@@ -1409,11 +1508,6 @@ export default function SupplierAdzDashboardPage() {
 
       {/* Top KPIs + charts + list */}
       <div className="w-full max-w-full px-[0.55%] py-6 grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {dataState === "error" ? (
-          <div className="lg:col-span-12 rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
-            Unable to load Adz campaigns from the database.
-          </div>
-        ) : null}
         <div className="lg:col-span-12 grid grid-cols-2 md:grid-cols-4 gap-3">
           {kpiCards.map((k) => (
             <div key={k.label} className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
@@ -1760,8 +1854,10 @@ export default function SupplierAdzDashboardPage() {
         onCopyLink={(ad) => copyShareLink(ad)}
       />
 
-      {/* Builder drawer */}
-      {drawer === "builder" ? <AdBuilder isDrawer={true} onClose={() => setDrawer(null)} initialAdId={drawerData} /> : null}
+      {/* Builder drawer (shared with Adz Marketplace) */}
+      {drawer === "builder" ? (
+        <AdBuilder isDrawer={true} onClose={() => setDrawer(null)} initialAdId={drawerData} />
+      ) : null}
 
       {toastApi.toast ? <Toast tone={toastApi.toast.tone} message={toastApi.toast.message} onClose={toastApi.clear} /> : null}
     </div>

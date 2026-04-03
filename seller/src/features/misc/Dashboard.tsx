@@ -1578,16 +1578,44 @@ export default function SupplierHubDashboardPage({
               : [
                   {
                     name: 'Marketplace orders',
-                    value: revenueBase,
-                    hint: `${ordersBase} tracked orders`,
-                    to: '/orders',
+                    value: 6_140_000 * scale,
+                    hint: 'Direct purchases',
+                    to: '/orders?source=marketplace',
                     top: [
-                      { label: 'Orders', value: `${ordersBase}` },
-                      { label: 'Listings', value: `${Number(sellerCounts.listings ?? 0)}` },
+                      { label: 'Conversion', value: filterMeta.hasMLDZ ? '3.1%' : '2.4%' },
+                      { label: 'Top region', value: 'East Africa' },
                     ],
                     actions: [
                       { label: 'View orders', to: '/orders', icon: Package },
                       { label: 'Improve listings', to: '/listings', icon: Store },
+                    ],
+                  },
+                  {
+                    name: 'Wholesale pipeline',
+                    value: 2_520_000 * scale,
+                    hint: 'Quotes and RFQs',
+                    to: '/wholesale',
+                    top: [
+                      { label: 'Open RFQs', value: '9' },
+                      { label: 'Avg ticket', value: formatMoney(320000 * scale, currency) },
+                    ],
+                    actions: [
+                      { label: 'Open wholesale', to: '/wholesale', icon: Globe },
+                      { label: 'Quotes received', to: '/wholesale/quotes', icon: BarChart3 },
+                    ],
+                  },
+                  {
+                    name: 'MyLiveDealz uplift',
+                    value: 820_000 * scale,
+                    hint: 'Live + Adz impact',
+                    to: '/mldz/ads',
+                    top: [
+                      { label: 'Active promos', value: filterMeta.hasMLDZ ? 'Focused' : '6' },
+                      { label: 'CTR', value: '4.8%' },
+                    ],
+                    actions: [
+                      { label: 'Start promo', to: '/mldz/promos/new', icon: Flame },
+                      { label: 'Adz performance', to: '/mldz/adz-performance', icon: BarChart3 },
                     ],
                   },
                 ]),

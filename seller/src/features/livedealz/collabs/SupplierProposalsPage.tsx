@@ -521,7 +521,7 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns, on
   function buildProposalPayload(status) {
     const creatorUserId = String(creator?.userId || campaign?.creatorId || "").trim();
     if (!creatorUserId) {
-      throw new Error("Selected creator is missing a backend creatorId. Pick a creator that already exists in proposals.");
+      throw new Error("Selected creator is missing creatorId. Pick a creator that already exists in proposals.");
     }
 
     const cleanedDeliverables = deliverables.map((item) => String(item || "").trim()).filter(Boolean);
@@ -619,7 +619,7 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns, on
       setBanner({
         tone: "info",
         title: "Proposal draft saved",
-        text: `Draft ${created?.id ? `(${created.id}) ` : ""}for ${creator?.name || "this creator"} was saved to backend.`,
+        text: `Your draft proposal for ${creator?.name || "this creator"} is ready to revisit.`,
       });
     } catch (error) {
       setBanner({
@@ -744,7 +744,7 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns, on
                     <div className="rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10 p-4">
                       <div className="text-sm font-black text-amber-900 dark:text-amber-300">No linked campaign available</div>
                       <div className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-                        Send proposal stays inactive until at least one supplier campaign is returned from backend.
+                        Send proposal stays inactive until at least one supplier campaign is available.
                       </div>
                     </div>
                   ) : null}
@@ -1780,7 +1780,7 @@ export default function SupplierProposalsPreviewCanvas() {
       setSelectedProposalId(String(created.id));
       setExpandedProposalId(String(created.id));
     }
-    toast("Proposal draft saved to backend.");
+    toast("Proposal draft saved.");
     return created;
   }
 
@@ -1792,7 +1792,7 @@ export default function SupplierProposalsPreviewCanvas() {
       setExpandedProposalId(String(created.id));
     }
     setProposalDrawerOpen(false);
-    toast("Proposal sent and captured in backend.");
+    toast("Proposal sent.");
     return created;
   }
 

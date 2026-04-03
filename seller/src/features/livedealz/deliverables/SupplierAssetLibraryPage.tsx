@@ -860,7 +860,6 @@ export default function SupplierAssetLibraryPage() {
   const [assets, setAssets] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [creators, setCreators] = useState([]);
-  const [dataState, setDataState] = useState("loading");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState(ALL_TEAM_ID);
   const [selectedCreatorId, setSelectedCreatorId] = useState(ALL_CREATORS_ID);
@@ -908,7 +907,6 @@ export default function SupplierAssetLibraryPage() {
 
   useEffect(() => {
     let mounted = true;
-    setDataState("loading");
     Promise.all([
       sellerBackendApi.getMediaAssets(),
       sellerBackendApi.getCampaigns(),
@@ -929,7 +927,6 @@ export default function SupplierAssetLibraryPage() {
         setAssets(mappedAssets);
         setCreators(mappedCreators);
         setActiveAssetId((prev) => (prev && mappedAssets.some((asset) => asset.id === prev) ? prev : mappedAssets[0]?.id || null));
-        setDataState("ready");
       })
       .catch(() => {
         if (!mounted) return;
@@ -937,7 +934,11 @@ export default function SupplierAssetLibraryPage() {
         setAssets([]);
         setCreators([]);
         setActiveAssetId(null);
-        setDataState("error");
+        setToast({
+          title: "Load failed",
+          body: "Unable to load campaign assets right now.",
+          tone: "warn",
+        });
       });
     return () => {
       mounted = false;
@@ -1428,11 +1429,6 @@ export default function SupplierAssetLibraryPage() {
       ) : null}
 
       <div className="w-full px-[0.55%] py-6">
-        {dataState === "error" ? (
-          <div className="mb-4 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
-            Unable to load campaign assets from the database right now.
-          </div>
-        ) : null}
         {/* Controls */}
         <div className="rounded-2xl border bg-white dark:bg-slate-900 p-4">
           <div className="grid gap-3 lg:grid-cols-12 lg:items-center">
@@ -1467,7 +1463,7 @@ export default function SupplierAssetLibraryPage() {
                         ))
                       ) : (
                         <option value="">
-                          {dataState === "loading" ? "Campaign: Loading campaigns..." : "Campaign: No campaigns available"}
+                          Campaign: No campaigns available
                         </option>
                       )}
                     </select>
@@ -1683,7 +1679,7 @@ export default function SupplierAssetLibraryPage() {
 
                 {filteredAssets.length === 0 ? (
                   <div className="col-span-full rounded-2xl border border-slate-300 dark:border-slate-700 border-dashed bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-6 text-center text-sm text-slate-700 dark:text-slate-200">
-                    {dataState === "loading" ? "Loading assets..." : "No assets match your filters."}
+                    No assets match your filters.
                     <div className="mt-2 text-xs text-slate-500 dark:text-slate-300">Try clearing filters or uploading new content for this campaign.</div>
                   </div>
                 ) : null}

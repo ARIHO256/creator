@@ -256,8 +256,6 @@ export default function SupplierLiveReplaysClipsPage() {
     navigate(destination);
   };
 
-  const [workspaceLoading, setWorkspaceLoading] = useState(true);
-  const [workspaceError, setWorkspaceError] = useState("");
   const [actionPendingId, setActionPendingId] = useState("");
   const [pageToast, setPageToast] = useState("");
   const [selectedReplayId, setSelectedReplayId] = useState("");
@@ -287,9 +285,7 @@ export default function SupplierLiveReplaysClipsPage() {
     return asArray(selectedReplay?.aiClipSuggestions);
   }, [selectedReplay]);
 
-  const loadWorkspace = async ({ silent = false } = {}) => {
-    if (!silent) setWorkspaceLoading(true);
-    setWorkspaceError("");
+  const loadWorkspace = async () => {
     try {
       await sellerBackendApi.ensureWorkspaceRole();
       const [replaysRaw, scheduleRaw] = await Promise.all([
@@ -315,9 +311,7 @@ export default function SupplierLiveReplaysClipsPage() {
         error instanceof Error && error.message
           ? error.message
           : "Failed to load replays workspace.";
-      setWorkspaceError(message);
-    } finally {
-      if (!silent) setWorkspaceLoading(false);
+      showPageToast(message);
     }
   };
 
@@ -376,7 +370,7 @@ export default function SupplierLiveReplaysClipsPage() {
     try {
       await sellerBackendApi.publishLiveReplay(id, { status: "published" });
       showPageToast("Replay published.");
-      await loadWorkspace({ silent: true });
+      await loadWorkspace();
     } catch (error) {
       showPageToast("Failed to publish replay.");
     } finally {
@@ -391,7 +385,7 @@ export default function SupplierLiveReplaysClipsPage() {
     try {
       await sellerBackendApi.patchLiveReplay(id, { status: "archived" });
       showPageToast("Replay moved to private.");
-      await loadWorkspace({ silent: true });
+      await loadWorkspace();
     } catch (error) {
       showPageToast("Failed to set replay as private.");
     } finally {
@@ -489,22 +483,9 @@ export default function SupplierLiveReplaysClipsPage() {
       />
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-6 overflow-y-auto overflow-x-hidden">
-        {workspaceLoading ? (
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-            Loading replays workspace...
-          </div>
-        ) : workspaceError ? (
-          <div className="rounded-2xl border border-rose-200 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20 p-6 text-sm text-rose-700 dark:text-rose-300">
-            <div className="font-semibold dark:font-bold">Unable to load live replays workspace.</div>
-            <div className="mt-1">{workspaceError}</div>
-            <div className="mt-3">
-              <Btn tone="brand" onClick={() => void loadWorkspace()}>Retry</Btn>
-            </div>
-          </div>
-        ) : (
-          <div className="w-full max-w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)] gap-4 items-start">
-            {/* Left: Replays + AI suggestions */}
-            <section className="flex flex-col gap-3">
+        <div className="w-full max-w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)] gap-4 items-start">
+          {/* Left: Replays + AI suggestions */}
+          <section className="flex flex-col gap-3">
               {/* Replay list */}
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 text-sm">
                 <div className="flex items-center justify-between mb-2">
@@ -606,31 +587,30 @@ export default function SupplierLiveReplaysClipsPage() {
                   Supplier note: If the campaign is Creator-hosted and approval is Manual, clips may be queued for Supplier review before Admin.
                 </div>
               </div>
-            </section>
+          </section>
 
-            {/* Right: Clip editor + distribution */}
-            <section className="flex flex-col gap-3">
-              <ClipEditorPanel
-                replay={selectedReplay}
-                clipStart={clipStart}
-                clipEnd={clipEnd}
-                onChangeStart={setClipStart}
-                onChangeEnd={setClipEnd}
-                overlayText={overlayText}
-                onChangeOverlay={setOverlayText}
-                ctaSticker={ctaSticker}
-                onChangeCta={setCtaSticker}
-                secondsToTime={secondsToTime}
-              />
-              <DistributionPanel
-                exportTargets={exportTargets}
-                onToggleTarget={handleToggleExportTarget}
-                onExport={handleExportClip}
-                onAddToAssetLibrary={() => handleAddToAssetLibrary()}
-              />
-            </section>
-          </div>
-        )}
+          {/* Right: Clip editor + distribution */}
+          <section className="flex flex-col gap-3">
+            <ClipEditorPanel
+              replay={selectedReplay}
+              clipStart={clipStart}
+              clipEnd={clipEnd}
+              onChangeStart={setClipStart}
+              onChangeEnd={setClipEnd}
+              overlayText={overlayText}
+              onChangeOverlay={setOverlayText}
+              ctaSticker={ctaSticker}
+              onChangeCta={setCtaSticker}
+              secondsToTime={secondsToTime}
+            />
+            <DistributionPanel
+              exportTargets={exportTargets}
+              onToggleTarget={handleToggleExportTarget}
+              onExport={handleExportClip}
+              onAddToAssetLibrary={() => handleAddToAssetLibrary()}
+            />
+          </section>
+        </div>
       </main>
 
       {/* Share Drawer */}

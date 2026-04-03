@@ -488,7 +488,7 @@ function DrawerShell({
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
             className={cx(
               "absolute top-0 right-0 bottom-0 bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-colors",
-              width || "w-full max-w-[1240px]"
+              width || "w-full max-w-[1600px]"
             )}
           >
             <div className="flex items-start justify-between gap-2 border-b border-neutral-200 dark:border-slate-800 px-4 py-3 shrink-0">
@@ -611,7 +611,7 @@ function Section({ title, subtitle, children, right }: { title: string; subtitle
 }
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cx("rounded-2xl bg-white dark:bg-slate-900/80 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors", className)}>{children}</div>;
+  return <div className={cx("rounded-2xl bg-white dark:bg-slate-900/80 p-3 shadow-sm transition-colors", className)}>{children}</div>;
 }
 
 /** ------------------------------ Demo Data ------------------------------ */
@@ -1840,6 +1840,18 @@ export default function AdBuilder({
     window.location.assign(picker.toString());
   }
 
+  function openCreativeEditor(applyTo: string) {
+    if (typeof window === "undefined") return;
+    persistDraftForPicker();
+    const editor = new URL("/supplier/deliverables/assets", window.location.origin);
+    editor.searchParams.set("mode", "picker");
+    editor.searchParams.set("target", "shoppable");
+    editor.searchParams.set("applyTo", applyTo);
+    editor.searchParams.set("returnTo", buildReturnToUrl());
+    editor.searchParams.set("entry", "creative_editor");
+    window.location.assign(editor.toString());
+  }
+
   function coerceAssetFromPickerPayload(payload: Record<string, unknown>): Asset | null {
     if (!payload || typeof payload !== "object") return null;
     const id = String(payload.id || "");
@@ -2470,9 +2482,12 @@ export default function AdBuilder({
                   <div className="mt-3 overflow-hidden rounded-2xl ring-1 ring-neutral-200 dark:ring-slate-800">
                     <img src={heroImageAsset?.url || "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop"} alt="Hero" className="h-40 w-full object-cover" />
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_image")} left={<Search className="h-4 w-4" />}>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_image")} left={<Search className="h-4 w-4" />} className="w-full min-w-0 text-xs px-2.5 sm:px-3">
                       Choose from Asset Library
+                    </Btn>
+                    <Btn tone="primary" onClick={() => openCreativeEditor("hero_image")} left={<Sparkles className="h-4 w-4" />} className="w-full sm:w-auto sm:min-w-[220px] text-xs px-3 whitespace-nowrap justify-center">
+                      Create from creative editor
                     </Btn>
                   </div>
                   <div className="mt-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-900 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800 transition-colors">
@@ -2491,7 +2506,7 @@ export default function AdBuilder({
                 <Card>
                   <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Hero intro video</div>
                   <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Plays when the hero play icon is tapped. This should be supplier-created content from the Asset Library.</div>
-                  <div className="mt-3 rounded-2xl bg-neutral-50 dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                  <div className="mt-3 rounded-2xl bg-neutral-50 dark:bg-slate-900 p-3 shadow-sm ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{heroVideoAsset?.title || "No intro video selected"}</div>
@@ -2507,10 +2522,15 @@ export default function AdBuilder({
                         {heroVideoAsset?.status || "—"}
                       </Pill>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_video")} left={<Film className="h-4 w-4" />}>
-                        Choose intro video
-                      </Btn>
+                    <div className="mt-2 space-y-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_video")} left={<Film className="h-4 w-4" />} className="w-full min-w-0 text-xs px-2.5 sm:px-3">
+                          Choose intro video
+                        </Btn>
+                        <Btn tone="primary" onClick={() => openCreativeEditor("hero_video")} left={<Sparkles className="h-4 w-4" />} className="w-full sm:w-auto sm:min-w-[220px] text-xs px-3 whitespace-nowrap justify-center">
+                          Create from creative editor
+                        </Btn>
+                      </div>
                       <Btn tone="ghost" onClick={openHeroViewer} left={<Play className="h-4 w-4" />}>
                         Preview
                       </Btn>
@@ -2523,7 +2543,7 @@ export default function AdBuilder({
               </div>
 
               {/* Item posters + videos */}
-              <div className="mt-4 rounded-3xl bg-neutral-50 dark:bg-slate-900 p-4 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+              <div className="mt-4 rounded-3xl bg-neutral-50 dark:bg-slate-900 p-4 shadow-sm ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Featured item media</div>
@@ -2546,7 +2566,7 @@ export default function AdBuilder({
                     const videoAsset = videoId ? assetById.get(videoId) : undefined;
 
                     return (
-                      <div key={o.id} className="rounded-3xl bg-white dark:bg-slate-950 p-4 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                      <div key={o.id} className="rounded-3xl bg-white dark:bg-slate-950 p-4 shadow-sm ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{o.name}</div>
@@ -2560,7 +2580,7 @@ export default function AdBuilder({
                         </div>
 
                         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                          <div className="rounded-2xl bg-neutral-50 dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                          <div className="rounded-2xl bg-neutral-50 dark:bg-slate-900 p-3 shadow-sm transition-colors">
                             <div className="flex items-start justify-between gap-2">
                               <div>
                                 <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Poster image</div>
@@ -2571,17 +2591,22 @@ export default function AdBuilder({
                             <div className="mt-2 overflow-hidden rounded-2xl ring-1 ring-neutral-200">
                               <img src={posterAsset?.url || o.catalogPosterUrl} alt="Poster" className="h-40 w-full object-cover" />
                             </div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Btn tone="primary" onClick={() => openAssetLibraryPicker(`item_poster:${o.id}`)} left={<Search className="h-4 w-4" />}>
-                                Choose poster
-                              </Btn>
+                            <div className="mt-2 space-y-2">
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                                <Btn tone="primary" onClick={() => openAssetLibraryPicker(`item_poster:${o.id}`)} left={<Search className="h-4 w-4" />} className="w-full min-w-0 text-xs px-2.5 sm:px-3">
+                                  Choose poster
+                                </Btn>
+                                <Btn tone="primary" onClick={() => openCreativeEditor(`item_poster:${o.id}`)} left={<Sparkles className="h-4 w-4" />} className="w-full sm:w-auto sm:min-w-[220px] text-xs px-3 whitespace-nowrap justify-center">
+                                  Create from creative editor
+                                </Btn>
+                              </div>
                               <Btn tone="ghost" onClick={() => setBuilder((p) => ({ ...p, itemPosterByOfferId: { ...p.itemPosterByOfferId, [o.id]: undefined } }))} left={<X className="h-4 w-4" />}>
                                 Clear
                               </Btn>
                             </div>
                           </div>
 
-                          <div className="rounded-2xl bg-neutral-50 dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                          <div className="rounded-2xl bg-neutral-50 dark:bg-slate-900 p-3 shadow-sm transition-colors">
                             <div className="flex items-start justify-between gap-2">
                               <div>
                                 <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Product video</div>
@@ -2592,14 +2617,19 @@ export default function AdBuilder({
                                 {videoAsset?.status || "catalog"}
                               </Pill>
                             </div>
-                            <div className="mt-2 rounded-2xl bg-white dark:bg-slate-800 p-3 ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors">
+                            <div className="mt-2 rounded-2xl bg-white dark:bg-slate-800 p-3 shadow-sm transition-colors">
                               <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{videoAsset?.title || (o.catalogVideoUrl ? "Catalog video (fallback)" : "No video")}</div>
                               <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Desktop viewer: {(videoAsset?.desktopMode || "modal").toUpperCase()}</div>
                             </div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Btn tone="primary" onClick={() => openAssetLibraryPicker(`item_video:${o.id}`)} left={<Film className="h-4 w-4" />}>
-                                Choose video
-                              </Btn>
+                            <div className="mt-2 space-y-2">
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                                <Btn tone="primary" onClick={() => openAssetLibraryPicker(`item_video:${o.id}`)} left={<Film className="h-4 w-4" />} className="w-full min-w-0 text-xs px-2.5 sm:px-3">
+                                  Choose video
+                                </Btn>
+                                <Btn tone="primary" onClick={() => openCreativeEditor(`item_video:${o.id}`)} left={<Sparkles className="h-4 w-4" />} className="w-full sm:w-auto sm:min-w-[220px] text-xs px-3 whitespace-nowrap justify-center">
+                                  Create from creative editor
+                                </Btn>
+                              </div>
                               <Btn tone="ghost" onClick={() => setBuilder((p) => ({ ...p, itemVideoByOfferId: { ...p.itemVideoByOfferId, [o.id]: undefined } }))} left={<X className="h-4 w-4" />}>
                                 Clear
                               </Btn>

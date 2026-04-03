@@ -2357,8 +2357,6 @@ export default function DealzMarketplace() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const [workspaceLoading, setWorkspaceLoading] = useState(true);
-  const [workspaceError, setWorkspaceError] = useState("");
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [dealz, setDealz] = useState<Deal[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -2394,11 +2392,7 @@ export default function DealzMarketplace() {
   const [liveCart, setLiveCart] = useState<Record<string, number>>({});
   const navigate = useNavigate();
 
-  const loadWorkspace = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
-    if (!silent) {
-      setWorkspaceLoading(true);
-      setWorkspaceError("");
-    }
+  const loadWorkspace = useCallback(async () => {
     try {
       await sellerBackendApi.ensureWorkspaceRole();
       const response = await sellerBackendApi.getDealzMarketplace();
@@ -2415,15 +2409,7 @@ export default function DealzMarketplace() {
         error instanceof Error && error.message
           ? error.message
           : "Failed to load Dealz Marketplace workspace.";
-      if (!silent) {
-        setWorkspaceError(message);
-        setDealz([]);
-        setSelectedId("");
-      }
-    } finally {
-      if (!silent) {
-        setWorkspaceLoading(false);
-      }
+      setToast(message);
     }
   }, []);
 
@@ -2817,27 +2803,6 @@ export default function DealzMarketplace() {
     { key: "Live Sessionz", label: "Live Sessionz", icon: <Video className="h-4 w-4" /> },
     { key: "Live + Shoppables", label: "Live + Shoppables", icon: <Sparkles className="h-4 w-4" /> }
   ];
-
-  if (workspaceLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-slate-950 text-sm text-neutral-600 dark:text-slate-300">
-        Loading Dealz Marketplace workspace…
-      </div>
-    );
-  }
-
-  if (workspaceError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-slate-950 p-6">
-        <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-neutral-700 dark:text-slate-300 space-y-3">
-          <div>{workspaceError}</div>
-          <Btn tone="primary" onClick={() => void loadWorkspace()}>
-            Retry
-          </Btn>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-slate-950 transition-colors">

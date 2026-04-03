@@ -1646,7 +1646,7 @@ function normalizeWorkspaceCampaignRecord(raw) {
     renegotiation: Boolean(metadata.renegotiation),
     health: String(metadata.health || (normalizedStage === "Execution" ? "on-track" : "stalled")),
     nextAction: String(metadata.nextAction || "Review campaign"),
-    lastActivity: String(metadata.lastActivity || "Synced from backend"),
+    lastActivity: String(metadata.lastActivity || "Updated recently"),
     lastActivityAt: Number(metadata.lastActivityAt || new Date(record.updatedAt || record.createdAt || now).getTime()),
     notes: String(metadata.notes || ""),
     internalOwner: String(metadata.internalOwner || "Supplier Manager"),
@@ -1781,8 +1781,6 @@ export default function SupplierMyCampaignsPage() {
   const { toasts, push } = useToasts();
 
   const [campaigns, setCampaigns] = useState([]);
-  const [workspaceLoading, setWorkspaceLoading] = useState(true);
-  const [workspaceError, setWorkspaceError] = useState("");
 
   const [activeStageFilter, setActiveStageFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -1824,8 +1822,6 @@ export default function SupplierMyCampaignsPage() {
   const [savingGiveawayAdd, setSavingGiveawayAdd] = useState(false);
 
   async function loadCampaignWorkspace() {
-    setWorkspaceLoading(true);
-    setWorkspaceError("");
     try {
       await sellerBackendApi.ensureWorkspaceRole();
       const workspace = await sellerBackendApi.getCampaignWorkspace();
@@ -1833,10 +1829,7 @@ export default function SupplierMyCampaignsPage() {
       setCampaigns(rows.map((row) => normalizeWorkspaceCampaignRecord(row)));
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Failed to load campaigns workspace.";
-      setWorkspaceError(message);
-      setCampaigns([]);
-    } finally {
-      setWorkspaceLoading(false);
+      push(message, "error");
     }
   }
 
@@ -2853,25 +2846,6 @@ export default function SupplierMyCampaignsPage() {
       defaultDiscountValue: builder.defaultDiscountValue
     };
   }, [builder.promoType, builder.promoArrangement, builder.defaultDiscountMode, builder.defaultDiscountValue]);
-
-  if (workspaceLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
-        Loading campaigns workspace…
-      </div>
-    );
-  }
-
-  if (workspaceError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300 space-y-3">
-          <div>{workspaceError}</div>
-          <Btn onClick={() => void loadCampaignWorkspace()}>Retry</Btn>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-full w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">

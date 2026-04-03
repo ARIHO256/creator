@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierCreatorProfilePage.jsx
@@ -287,7 +286,7 @@ function Review({ brand, quote }) {
         <span className="text-sm font-semibold">{brand}</span>
         <span className="text-xs text-amber-500 dark:text-amber-400">★★★★★</span>
       </div>
-      <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">&quot;{quote}&quot;</p>
+      <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">"{quote}"</p>
     </li>
   );
 }
@@ -302,35 +301,66 @@ function SocialStat({ icon, label, value }) {
   );
 }
 
-/* ----------------------------- Supplier campaign mapping ----------------------------- */
+/* ----------------------------- Supplier domain mocks ----------------------------- */
 
-function toNumber(value, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function normalizeInviteCampaign(record) {
-  const data = record?.data && typeof record.data === "object" && !Array.isArray(record.data) ? record.data : {};
-  const usageRaw = String(data?.creatorUsage || data?.creatorUsageDecision || "I will use a Creator");
-  const creatorUsageDecision =
-    usageRaw === "I will NOT use a Creator" || usageRaw === "I am NOT SURE yet" ? usageRaw : "I will use a Creator";
-  const collabMode = String(data?.collabMode || "Open for Collabs");
-  const approvalMode = String(data?.approvalMode || "Manual") === "Auto" ? "Auto" : "Manual";
-  return {
-    id: String(record?.id || data?.id || `campaign-${Math.random().toString(16).slice(2, 7)}`),
-    name: String(record?.title || data?.name || data?.title || "Campaign"),
-    stage: String(data?.stage || record?.status || "Collabs"),
-    creatorUsageDecision,
-    collabMode: collabMode === "Open for Collabs" ? "Open for Collabs" : "Invite-only",
-    approvalMode,
-    currency: String(data?.currency || "USD"),
-    budget: toNumber(data?.budget ?? data?.value, 0),
-    region: String(data?.region || "Global"),
-    type: String(data?.type || data?.campaignType || "Shoppable Adz"),
-    startDate: String(data?.startDate || data?.startISO || todayYMD()),
-    endDate: String(data?.endDate || data?.endISO || ""),
-  };
-}
+const MOCK_CAMPAIGNS = [
+  {
+    id: "S-201",
+    name: "Beauty Flash Week (Combo)",
+    stage: "Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-only",
+    approvalMode: "Manual",
+    currency: "USD",
+    budget: 2400,
+    region: "East Africa",
+    type: "Live + Shoppables.",
+    startDate: "2026-02-10",
+    endDate: "2026-02-23"
+  },
+  {
+    id: "S-204",
+    name: "ShopNow Groceries Soft Promo",
+    stage: "Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Auto",
+    currency: "USD",
+    budget: 1200,
+    region: "East Africa",
+    type: "Shoppable Adz",
+    startDate: "2026-03-01",
+    endDate: "2026-03-21"
+  },
+  {
+    id: "S-203",
+    name: "Supplier-only Promo Sprint",
+    stage: "Execution",
+    creatorUsageDecision: "I will NOT use a Creator",
+    collabMode: "—",
+    approvalMode: "Auto",
+    currency: "USD",
+    budget: 800,
+    region: "East Africa",
+    type: "Shoppable Adz",
+    startDate: "2026-02-23",
+    endDate: "2026-02-27"
+  },
+  {
+    id: "S-212",
+    name: "New Launch (Creator plan pending)",
+    stage: "Draft",
+    creatorUsageDecision: "I am NOT SURE yet",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    currency: "USD",
+    budget: 1600,
+    region: "Africa / Asia",
+    type: "Live Sessionz",
+    startDate: todayYMD(),
+    endDate: ""
+  }
+];
 
 const DELIVERABLE_PACKS = [
   {
@@ -934,29 +964,6 @@ export default function SupplierCreatorProfilePage() {
 
   const [toastText, setToastText] = useState(null);
   const [toastTone, setToastTone] = useState("info");
-  const [campaigns, setCampaigns] = useState([]);
-  const [campaignState, setCampaignState] = useState("loading");
-
-  useEffect(() => {
-    let mounted = true;
-    setCampaignState("loading");
-    sellerBackendApi
-      .getCampaigns()
-      .then((rows) => {
-        if (!mounted) return;
-        const mapped = Array.isArray(rows) ? rows.map(normalizeInviteCampaign).filter((campaign) => campaign.id) : [];
-        setCampaigns(mapped);
-        setCampaignState("ready");
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setCampaigns([]);
-        setCampaignState("error");
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const toast = (msg, tone = "info") => {
     setToastTone(tone);
@@ -1031,13 +1038,6 @@ export default function SupplierCreatorProfilePage() {
 
       {/* Hero section */}
       <main className="flex-1 flex flex-col pb-24">
-        {campaignState === "error" ? (
-          <section className="w-full px-[0.55%] pt-4">
-            <div className="rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
-              Unable to load supplier campaigns for invite creation right now.
-            </div>
-          </section>
-        ) : null}
         <section className="relative">
           {/* Banner */}
           <div className="h-20 md:h-24 bg-gradient-to-r from-[#f77f00] via-[#03cd8c] to-[#f77f00]" />
@@ -1275,7 +1275,7 @@ export default function SupplierCreatorProfilePage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         creator={creator}
-        campaigns={campaigns}
+        campaigns={MOCK_CAMPAIGNS}
         onInviteSent={() => {
           // Optional: in production, update My Creators / Invites state stores
         }}
@@ -1295,8 +1295,7 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
   assert(typeof ORANGE === "string" && ORANGE.length > 0, "ORANGE exists");
   assert(typeof GREEN === "string" && GREEN.length > 0, "GREEN exists");
-  const normalized = normalizeInviteCampaign({ id: "c1", data: { name: "Campaign A" } });
-  assert(normalized.id === "c1", "campaign mapper keeps id");
+  assert(Array.isArray(MOCK_CAMPAIGNS) && MOCK_CAMPAIGNS.length > 0, "campaign mocks exist");
   assert(Array.isArray(DELIVERABLE_PACKS) && DELIVERABLE_PACKS.length > 0, "deliverable packs exist");
   console.log("✅ SupplierCreatorProfilePage self-tests passed");
 }

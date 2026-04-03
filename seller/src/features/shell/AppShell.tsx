@@ -529,7 +529,7 @@ function IconButton({
       className={cx(
         'relative inline-flex h-10 w-10 items-center justify-center rounded-xl border transition',
         tone === 'dark'
-          ? 'border-white/25 bg-white dark:bg-slate-900/12 text-white hover:bg-gray-50 dark:hover:bg-slate-800/18'
+          ? 'border-white/30 bg-white/95 text-slate-900 hover:bg-white dark:border-white/25 dark:bg-slate-900/12 dark:text-white dark:hover:bg-slate-800/18'
           : 'border-slate-200/70 bg-white dark:bg-slate-900/85 text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800',
         className
       )}
@@ -638,7 +638,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
               <button
                 type="button"
                 onClick={() => dismiss(t.id)}
-                className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:bg-slate-950"
+                className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800"
                 aria-label="Dismiss"
               >
                 <X className="h-4 w-4" />
@@ -672,7 +672,7 @@ function Select({
         className={cx(
           'h-10 w-full appearance-none rounded-md border px-3 pr-8 text-xs font-semibold outline-none transition',
           tone === 'dark'
-            ? 'border-white/25 bg-white dark:bg-slate-900/12 text-white focus:bg-white dark:bg-slate-900/16'
+            ? 'border-white/25 bg-white/95 text-slate-900 focus:bg-white dark:bg-slate-900/16 dark:text-white'
             : 'border-slate-300 bg-white dark:bg-slate-900 text-slate-700 focus:border-slate-400'
         )}
       >
@@ -963,8 +963,8 @@ function TopBar({
                 className={cx(
                   'inline-flex h-10 items-center gap-2 rounded-md border px-3 text-left transition',
                   themeMode === 'dark'
-                    ? 'border-white/25 bg-white dark:bg-slate-900/12 text-white hover:bg-gray-50 dark:hover:bg-slate-800/18'
-                    : 'border-slate-200 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-gray-50 dark:bg-slate-950'
+                    ? 'border-white/25 bg-white/95 text-slate-900 hover:bg-white dark:bg-slate-900/12 dark:text-white dark:hover:bg-slate-800/18'
+                    : 'border-slate-200 bg-white text-gray-900 hover:bg-gray-50'
                 )}
               >
                 <div
@@ -1496,7 +1496,7 @@ function DesktopSidebar({
                       : 'border-emerald-200 bg-emerald-50 text-emerald-800'
                     : isDark
                       ? 'border-slate-700/70 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                      : 'border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:bg-slate-950'
+                      : 'border-slate-200/70 bg-white text-slate-700 hover:bg-gray-50'
                 )}
               >
                 Seller
@@ -1512,7 +1512,7 @@ function DesktopSidebar({
                       : 'border-emerald-200 bg-emerald-50 text-emerald-800'
                     : isDark
                       ? 'border-slate-700/70 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                      : 'border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:bg-slate-950'
+                      : 'border-slate-200/70 bg-white text-slate-700 hover:bg-gray-50'
                 )}
               >
                 Provider
@@ -2267,7 +2267,7 @@ function CommandPalette({
                       'grid h-9 w-9 place-items-center rounded-2xl border',
                       isDark
                         ? 'border-slate-700/70 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                        : 'border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:bg-slate-950'
+                        : 'border-slate-200/70 bg-white text-slate-700 hover:bg-gray-50'
                     )}
                     aria-label="Close"
                   >
@@ -2314,7 +2314,7 @@ function CommandPalette({
                               : 'border-emerald-200 bg-emerald-50 text-emerald-800'
                             : isDark
                               ? 'border-slate-700/70 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                              : 'border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:bg-slate-950'
+                              : 'border-slate-200/70 bg-white text-slate-700 hover:bg-gray-50'
                         )}
                       >
                         {c}
@@ -3690,7 +3690,13 @@ function ShellSidebarCard({
           <div
             className={cx(
               'grid h-9 w-9 place-items-center rounded-2xl',
-              headerText.includes('white') ? 'bg-white dark:bg-slate-900/10' : isDark ? 'bg-slate-800' : 'bg-slate-100'
+              headerText.includes('white')
+                ? isDark
+                  ? 'border border-white/20 bg-white/10'
+                  : 'border border-white/30 bg-white/15'
+                : isDark
+                  ? 'bg-slate-800'
+                  : 'bg-slate-100'
             )}
           >
             <Icon className={cx('h-4 w-4', headerText)} />

@@ -427,7 +427,7 @@ function InviteModal({ creator, campaigns, onClose, onInviteSent }) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [submitError, setSubmitError] = useState("");
+  const [simOutcome, setSimOutcome] = useState("sent"); // sent | rejected | changes | renegotiate
 
   useScrollLock(true);
 
@@ -437,7 +437,6 @@ function InviteModal({ creator, campaigns, onClose, onInviteSent }) {
 
   const handleSendInvite = async () => {
     if (!message.trim() || !canInvite) return;
-    setSubmitError("");
     setIsSubmitting(true);
     try {
       const parsedBudget = Number(budget);
@@ -472,12 +471,29 @@ function InviteModal({ creator, campaigns, onClose, onInviteSent }) {
       setTimeout(() => onClose(), 1600);
     } catch (error) {
       setIsSubmitting(false);
-      setSubmitError(error instanceof Error && error.message ? error.message : "Could not send invite right now.");
+      if (typeof onInviteSent === "function") {
+        onInviteSent(error instanceof Error && error.message ? error.message : "Could not send invite right now.");
+      }
     }
   };
 
-  const outcomeCopy = "Invite sent!";
-  const outcomeDesc = `${creator.name} has been notified. You can track status in Proposals/Contracts.`;
+  const outcomeCopy =
+    simOutcome === "sent"
+      ? "Invite sent!"
+      : simOutcome === "rejected"
+        ? "Creator declined"
+        : simOutcome === "changes"
+          ? "Changes requested"
+          : "Renegotiation requested";
+
+  const outcomeDesc =
+    simOutcome === "sent"
+      ? `${creator.name} has been notified. You can track the invite status in Proposals/Contracts.`
+      : simOutcome === "rejected"
+        ? `${creator.name} declined due to timing. Consider inviting another creator or adjusting deadlines.`
+        : simOutcome === "changes"
+          ? `${creator.name} requested changes to budget/deliverables. Continue in Negotiation Room.`
+          : `${creator.name} wants to renegotiate payout terms. Continue in Negotiation Room.`;
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end bg-black/40 backdrop-blur-[2px] transition-all animate-in fade-in duration-300" onClick={onClose}>
@@ -510,8 +526,8 @@ function InviteModal({ creator, campaigns, onClose, onInviteSent }) {
         <div className="flex-1 overflow-y-auto p-3 space-y-3 relative">
           {isSuccess ? (
             <div className="absolute inset-0 z-10 bg-white dark:bg-slate-900 flex flex-col items-center justify-center p-6 animate-in fade-in duration-300">
-              <div className="h-16 w-16 rounded-full flex items-center justify-center mb-4 bg-emerald-100 dark:bg-emerald-900/30">
-                <span className="text-3xl">🎉</span>
+              <div className={cx("h-16 w-16 rounded-full flex items-center justify-center mb-4", simOutcome === "sent" ? "bg-emerald-100 dark:bg-emerald-900/30" : simOutcome === "rejected" ? "bg-rose-100 dark:bg-rose-900/30" : "bg-amber-100 dark:bg-amber-900/30")}>
+                <span className="text-3xl">{simOutcome === "sent" ? "🎉" : simOutcome === "rejected" ? "⛔" : "📝"}</span>
               </div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{outcomeCopy}</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 text-center">{outcomeDesc}</p>
@@ -692,11 +708,25 @@ function InviteModal({ creator, campaigns, onClose, onInviteSent }) {
             </p>
           </section>
 
-          {/* Delivery mode */}
+          {/* Demo outcome selector (kept subtle) */}
           <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800/50 p-3">
-            <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200">Delivery</div>
-            <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300">
-              Invites are sent to the backend and appear in collaboration invites/proposals.
+            <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200">Demo outcome</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {[{ id: "sent", label: "Sent" }, { id: "rejected", label: "Creator rejects" }, { id: "changes", label: "Changes requested" }, { id: "renegotiate", label: "Renegotiation" }].map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  className={cx(
+                    "px-3 py-1.5 rounded-full border text-[11px] font-extrabold",
+                    simOutcome === o.id
+                      ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100"
+                      : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+                  )}
+                  onClick={() => setSimOutcome(o.id)}
+                >
+                  {o.label}
+                </button>
+              ))}
             </div>
           </section>
 
@@ -713,9 +743,6 @@ function InviteModal({ creator, campaigns, onClose, onInviteSent }) {
           >
             {isSubmitting ? "Sending invite..." : canInvite ? "Send invite" : "Invite disabled"}
           </button>
-          {submitError ? (
-            <div className="text-[11px] text-rose-600 dark:text-rose-300">{submitError}</div>
-          ) : null}
 
           {/* Permission comment */}
           <div className="text-[10px] text-slate-500">
@@ -891,7 +918,7 @@ export default function SupplierCreatorDirectoryPage() {
       .catch((error) => {
         if (cancelled) return;
         const message =
-          error instanceof Error && error.message ? error.message : "Creator directory failed to load from backend.";
+          error instanceof Error && error.message ? error.message : "Creator directory failed to load.";
         setAiHint(message);
         setCreators([]);
         setSupplierCampaigns([]);
@@ -1197,7 +1224,7 @@ export default function SupplierCreatorDirectoryPage() {
                 <div className="min-w-0">
                   <div className="text-sm font-extrabold text-rose-900 dark:text-rose-200">Creator directory failed to load</div>
                   <div className="text-xs text-rose-800 dark:text-rose-300 mt-1">
-                    Check network connectivity or try again.
+                    Check network connectivity or try again. (Demo error state)
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button
@@ -1219,11 +1246,6 @@ export default function SupplierCreatorDirectoryPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          ) : null}
-          {dataState === "loading" ? (
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs text-slate-600 dark:text-slate-300">
-              Loading creators from backend...
             </div>
           ) : null}
         </div>

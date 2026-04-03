@@ -1,6 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierTaskBoardPage.jsx
@@ -49,45 +48,91 @@ function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
-/* ----------------------------- Data mapping ----------------------------- */
+/* ----------------------------- Mock Contracts ----------------------------- */
 
-function toNumber(value, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function mapContractRecord(record) {
-  const data = record?.data && typeof record.data === "object" && !Array.isArray(record.data) ? record.data : {};
-  const deliverablesRaw = Array.isArray(data?.deliverables) ? data.deliverables : Array.isArray(record?.deliverables) ? record.deliverables : [];
-  return {
-    id: String(record?.id || data?.id || ""),
-    status: String(record?.status || data?.status || "Active"),
-    campaign: String(data?.campaignName || data?.campaign || record?.title || "Campaign"),
-    brand: String(data?.brand || data?.brandName || "Brand"),
-    currency: String(data?.currency || record?.currency || "UGX"),
-    value: toNumber(data?.value ?? data?.budget ?? record?.value, 0),
-    totalTasks: Math.max(1, deliverablesRaw.length || toNumber(data?.totalTasks, 1)),
-    creator:
-      data?.creator && typeof data.creator === "object"
-        ? {
-            name: String(data.creator.name || "Creator"),
-            handle: String(data.creator.handle || "@creator"),
-            avatarUrl: String(data.creator.avatarUrl || ""),
-          }
-        : { name: "(Supplier-hosted)", handle: "@supplier", avatarUrl: "" },
+const CONTRACTS = [
+  {
+    id: "C-901",
+    status: "Active",
+    campaign: "EV Charger Flash Drop",
+    brand: "EV World Store",
+    currency: "UGX",
+    value: 7200000,
+    totalTasks: 6,
+    creator: { name: "Luna Ade", handle: "@lunaade", avatarUrl: "https://i.pravatar.cc/120?img=7" },
     governance: {
-      hostRole: String(data?.hostRole || "Creator"),
-      creatorUsage: String(data?.creatorUsage || "I will use a Creator"),
-      collabMode: String(data?.collabMode || "Open for Collabs"),
-      approvalMode: String(data?.approvalMode || "Manual"),
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
     },
-    deliverables: deliverablesRaw.map((deliverable, index) => ({
-      id: toNumber(deliverable?.id, index + 1),
-      label: String(deliverable?.label || deliverable?.name || `Deliverable ${index + 1}`),
-      done: Boolean(deliverable?.done || deliverable?.status === "DONE"),
-    })),
-  };
-}
+    deliverables: [
+      { id: 1, label: "Live Session (EV charger demo)", done: false },
+      { id: 2, label: "Video Clip (30s highlight)", done: false },
+      { id: 3, label: "Story (countdown + CTA)", done: false },
+      { id: 4, label: "Post (product grid)", done: true }
+    ]
+  },
+  {
+    id: "C-902",
+    status: "Active",
+    campaign: "Back-to-Work Essentials",
+    brand: "Urban Supply",
+    currency: "UGX",
+    value: 5400000,
+    totalTasks: 5,
+    creator: { name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Invite-Only",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Video Clip (unboxing)", done: false },
+      { id: 2, label: "Story (3-item roundup)", done: false },
+      { id: 3, label: "Post (bundle offer)", done: false }
+    ]
+  },
+  {
+    id: "C-903",
+    status: "Active",
+    campaign: "Home Essentials Drop",
+    brand: "HomePro",
+    currency: "UGX",
+    value: 3600000,
+    totalTasks: 4,
+    creator: { name: "(Supplier-hosted)", handle: "@homepro", avatarUrl: "https://i.pravatar.cc/120?img=46" },
+    governance: {
+      hostRole: "Supplier",
+      creatorUsage: "I will NOT use a Creator",
+      collabMode: "(n/a)",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Live Session (kitchen bundle)", done: false },
+      { id: 2, label: "Video Clip (best moments)", done: false },
+      { id: 3, label: "Post (bundle pricing)", done: false }
+    ]
+  },
+  {
+    id: "C-904",
+    status: "Terminated",
+    campaign: "Old Campaign (terminated)",
+    brand: "Do Not Show",
+    currency: "UGX",
+    value: 0,
+    totalTasks: 0,
+    creator: { name: "N/A", handle: "@na", avatarUrl: "https://i.pravatar.cc/120?img=20" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
+    },
+    deliverables: []
+  }
+];
 
 /* ----------------------------- Types / Config ----------------------------- */
 
@@ -335,35 +380,11 @@ function Toast({ text, onClose }) {
 /* ----------------------------- Main Page ----------------------------- */
 
 export default function SupplierTaskBoardPage() {
-  const [contracts, setContracts] = useState([]);
-  const [dataState, setDataState] = useState("loading");
-
-  useEffect(() => {
-    let mounted = true;
-    setDataState("loading");
-    sellerBackendApi
-      .getCollaborationContracts()
-      .then((rows) => {
-        if (!mounted) return;
-        const mapped = Array.isArray(rows) ? rows.map(mapContractRecord).filter((contract) => contract.id) : [];
-        setContracts(mapped);
-        setDataState("ready");
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setContracts([]);
-        setDataState("error");
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
   // 1) Derive all tasks from contracts
   const allDerivedTasks = useMemo(() => {
     const tasks = [];
 
-    contracts.forEach((contract) => {
+    CONTRACTS.forEach((contract) => {
       if (contract.status === "Terminated") return;
 
       (contract.deliverables || []).forEach((d) => {
@@ -429,10 +450,10 @@ export default function SupplierTaskBoardPage() {
     });
 
     return tasks;
-  }, [contracts]);
+  }, []);
 
   // 2) Distribute into columns (mirrors creator logic)
-  const distributeTasksToColumns = (tasks) => {
+  const [columns, setColumns] = useState(() => {
     const cols = {
       todo: [],
       "in-progress": [],
@@ -451,14 +472,7 @@ export default function SupplierTaskBoardPage() {
     });
 
     return cols;
-  };
-
-  const [columns, setColumns] = useState(() =>
-    distributeTasksToColumns([])
-  );
-  useEffect(() => {
-    setColumns(distributeTasksToColumns(allDerivedTasks));
-  }, [allDerivedTasks]);
+  });
 
   const [dragging, setDragging] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -664,11 +678,6 @@ export default function SupplierTaskBoardPage() {
       />
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
-        {dataState === "error" ? (
-          <div className="rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
-            Unable to load contracts and tasks from the database right now.
-          </div>
-        ) : null}
         <div className="w-full max-w-full flex flex-col gap-3">
           <div className="flex items-center justify-between text-sm">
             <div>
@@ -853,7 +862,7 @@ export default function SupplierTaskBoardPage() {
       <NewTaskDrawer
         open={newTaskOpen}
         onClose={() => setNewTaskOpen(false)}
-        contracts={contracts.filter((contract) => contract.status !== "Terminated")}
+        contracts={CONTRACTS.filter((c) => c.status !== "Terminated")}
         existingTasks={allTasksFlat}
         onCreate={(payload) => addNewTaskToBoard(payload)}
         setToast={setToast}

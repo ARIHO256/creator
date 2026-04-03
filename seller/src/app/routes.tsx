@@ -81,10 +81,10 @@ const mapSupplierPathToMldz = (pathname: string): string => {
     return '/mldz/live/dashboard';
   if (pathname.startsWith('/supplier/live-schedule') || pathname.startsWith('/supplier/live/schedule'))
     return '/mldz/live/schedule';
+  if (pathname.startsWith('/supplier/live/builder')) return '/mldz/live/builder';
   if (
     pathname.startsWith('/supplier/live-studio') ||
-    pathname.startsWith('/supplier/live/studio') ||
-    pathname.startsWith('/supplier/live/builder')
+    pathname.startsWith('/supplier/live/studio')
   )
     return '/mldz/live/studio';
   if (pathname.startsWith('/supplier/replays-clips') || pathname.startsWith('/supplier/live/replays'))
@@ -178,14 +178,14 @@ type GuardProps = {
 };
 
 const LiveDealzGuard = ({ children }: GuardProps) =>
-  isValidSession(useSession()) ? children : <Navigate to="/dashboard" replace />;
+  isValidSession(useSession()) ? children : <Navigate to="/auth" replace />;
 const ChannelGuard = ({
   channelKey,
   children,
 }: {
   channelKey: string;
   children: React.ReactElement;
-}) => (useChannels()[channelKey] ? children : <Navigate to="/dashboard" replace />);
+}) => (useChannels()[channelKey] ? children : <Navigate to="/auth" replace />);
 
 // Landing
 const Landing = safeLazy(() => import('../features/landing/Landing'), 'Landing');
@@ -348,6 +348,11 @@ const MldzLiveStudio = safeNamedLazy(
   () => import('../features/livedealz/live/SupplierLiveStudioPage'),
   'SupplierLiveStudioPage',
   'Live studio'
+);
+const MldzLiveBuilder = safeNamedLazy(
+  () => import('../features/livedealz/live/LiveBuilder_LivePlan_SupplierFacing'),
+  'LiveBuilderPage',
+  'Live builder'
 );
 const MldzStreamToPlatforms = safeNamedLazy(
   () => import('../features/livedealz/live/SupplierStreamToPlatformsPage'),
@@ -731,14 +736,14 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
   const role = getCurrentRole(session);
   const onboardingPath = onboardingPathForRole(role);
   const status = readOnboardingStatus(role, session);
-  const targetOnboarding = nextOnboardingRoute(role, status) || onboardingPath;
   const onOnboardingRoute = location.pathname.startsWith(onboardingPath);
+  const onAuthRoute = location.pathname.startsWith('/auth');
   const enforceOnboarding =
     isAuthenticated && session?.onboardingRequired && needsOnboarding(role, session);
   const mldzPriorityPrefetchedRef = useRef(false);
 
-  if (enforceOnboarding && !onOnboardingRoute) {
-    return <Navigate to={targetOnboarding} replace />;
+  if (enforceOnboarding && !onOnboardingRoute && !onAuthRoute) {
+    return <Navigate to="/auth" replace />;
   }
 
   useEffect(() => {
@@ -831,8 +836,15 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
       <Routes location={location}>
         {isAuthenticated ? (
           <>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/auth" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<Navigate to={enforceOnboarding ? "/auth" : "/dashboard"} replace />} />
+            <Route
+              path="/auth"
+              element={enforceOnboarding ? <Auth defaultTab="signin" /> : <Navigate to="/dashboard" replace />}
+            />
+            <Route
+              path="/auth/*"
+              element={enforceOnboarding ? <Auth defaultTab="signin" /> : <Navigate to="/dashboard" replace />}
+            />
             <Route path="/landing" element={<Landing />} />
             <Route path="/dashboard" element={<Dashboard role={role} />} />
             <Route path="/status-center" element={<SettingsStatusCenter />} />
@@ -1334,6 +1346,14 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
               element={
                 <LiveDealzGuard>
                   <MldzLiveSchedule />
+                </LiveDealzGuard>
+              }
+            />
+            <Route
+              path="/mldz/live/builder"
+              element={
+                <LiveDealzGuard>
+                  <MldzLiveBuilder />
                 </LiveDealzGuard>
               }
             />

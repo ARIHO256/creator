@@ -811,7 +811,6 @@ function ContractDetail({ contract, onUpdateContract }) {
 export default function SupplierContractsPage() {
   const [activeFilter, setActiveFilter] = useState("Active");
   const [selectedContractId, setSelectedContractId] = useState(null);
-
   const [dataState, setDataState] = useState("loading"); // ready | loading | error
 
   const [contracts, setContracts] = useState([]);
@@ -910,7 +909,6 @@ export default function SupplierContractsPage() {
               })}
             </div>
 
-            {/* Error / loading */}
             {dataState === "error" ? (
               <div className="rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 p-3">
                 <div className="text-sm font-extrabold text-rose-900 dark:text-rose-200">Contracts failed to load</div>

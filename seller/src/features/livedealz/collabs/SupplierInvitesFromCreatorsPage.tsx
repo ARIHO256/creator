@@ -1110,7 +1110,6 @@ export default function InvitesFromCreatorsPreviewCanvas() {
   const [proposalDrawerOpen, setProposalDrawerOpen] = useState(false);
   const [proposalInvite, setProposalInvite] = useState(null);
   const [declineConfirmId, setDeclineConfirmId] = useState(null);
-  const [dataState, setDataState] = useState("loading");
   const { run, isPending } = useAsyncAction();
 
   async function loadInvites() {
@@ -1122,17 +1121,14 @@ export default function InvitesFromCreatorsPreviewCanvas() {
 
   useEffect(() => {
     let mounted = true;
-    setDataState("loading");
     loadInvites()
       .then(() => {
         if (!mounted) return;
-        setDataState("ready");
       })
       .catch(() => {
         if (!mounted) return;
         setInvites([]);
         setSelectedInviteId(null);
-        setDataState("error");
         toast("Failed to load invites.");
       });
     return () => {
@@ -1299,11 +1295,6 @@ export default function InvitesFromCreatorsPreviewCanvas() {
           </section>
 
           <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
-            {dataState === "error" ? (
-              <div className="rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                Unable to load invites from the database.
-              </div>
-            ) : null}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-500 dark:text-slate-300">View:</span>

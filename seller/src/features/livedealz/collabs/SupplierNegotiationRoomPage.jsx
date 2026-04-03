@@ -291,7 +291,7 @@ export default function SupplierNegotiationRoomPage() {
       if (requestId !== requestRef.current) return null;
       setLoadingRoom(false);
       setProposalRoom(null);
-      setRoomError(error instanceof Error ? error.message : "Failed to load negotiation room from database.");
+      setRoomError(error instanceof Error ? error.message : "Failed to load negotiation room.");
       return null;
     }
   };
@@ -552,7 +552,7 @@ export default function SupplierNegotiationRoomPage() {
 
           {loadingRoom ? (
             <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-sm text-slate-600 dark:text-slate-300">
-              Loading negotiation room from database…
+              Loading negotiation room…
             </section>
           ) : null}
 

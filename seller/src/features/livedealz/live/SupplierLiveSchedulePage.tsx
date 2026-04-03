@@ -294,8 +294,6 @@ function QRCodeMock({ value, size = 160 }) {
 export default function SupplierLiveScheduleCalendarPage() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState("week"); // week | month | agenda
-  const [workspaceLoading, setWorkspaceLoading] = useState(true);
-  const [workspaceError, setWorkspaceError] = useState("");
   const [sessions, setSessions] = useState([]);
   const [aiSlots, setAiSlots] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -314,28 +312,25 @@ export default function SupplierLiveScheduleCalendarPage() {
     navigate(target);
   };
 
-  const loadWorkspace = async ({ silent = false } = {}) => {
-    if (!silent) setWorkspaceLoading(true);
-    setWorkspaceError("");
-    try {
-      await sellerBackendApi.ensureWorkspaceRole();
-      const raw = await sellerBackendApi.getLiveScheduleWorkspace();
-      const normalized = normalizeScheduleWorkspace(raw);
-      setSessions(normalized.sessions);
-      setAiSlots(normalized.aiSlots);
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : "Failed to load live schedule workspace.";
-      setWorkspaceError(message);
-    } finally {
-      if (!silent) setWorkspaceLoading(false);
-    }
-  };
-
   useEffect(() => {
+    let cancelled = false;
+    const loadWorkspace = async () => {
+      try {
+        await sellerBackendApi.ensureWorkspaceRole();
+        const raw = await sellerBackendApi.getLiveScheduleWorkspace();
+        if (cancelled) return;
+        const normalized = normalizeScheduleWorkspace(raw);
+        setSessions(normalized.sessions);
+        setAiSlots(normalized.aiSlots);
+      } catch {
+        setSessions([]);
+        setAiSlots([]);
+      }
+    };
     void loadWorkspace();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -352,19 +347,19 @@ export default function SupplierLiveScheduleCalendarPage() {
 
   const conflicts = useMemo(() => {
     const msgs = [];
-    const heavy = sessions.filter((session) => session.workloadScore >= 4);
+    const heavy = sessions.filter((s) => s.workloadScore >= 4);
     if (heavy.length) {
-      msgs.push("High workload detected on some sessions this week. Consider spacing prep and rehearsals.");
+      msgs.push("You have heavy workload on Tech Friday. Consider spacing prep and lives.");
     }
 
-    const conflictSessions = sessions.filter((session) => session.conflict);
+    const conflictSessions = sessions.filter((s) => s.conflict);
     if (conflictSessions.length) {
-      msgs.push("Some sessions may overlap with prep windows. Review host and crew availability before go-live.");
+      msgs.push("Some sessionz may overlap with prep windows. Review supplier-hosted Tech Friday schedule.");
     }
 
-    const pendingAssets = sessions.filter((session) => !session.assetsReady && session.status !== "Ended");
+    const pendingAssets = sessions.filter((s) => !s.assetsReady && s.status !== "Ended");
     if (pendingAssets.length) {
-      msgs.push("Some sessions are missing assets. If approval mode is Manual, delays can block Admin review.");
+      msgs.push("Some sessionz are missing assets. If approval mode is Manual, delays can block Admin review.");
     }
 
     return msgs;
@@ -381,15 +376,10 @@ export default function SupplierLiveScheduleCalendarPage() {
   }, [sessions]);
 
   const agendaSessions = useMemo(() => {
-    return [...sessions].sort((left, right) => {
-      const leftStart = Date.parse(left.startISO);
-      const rightStart = Date.parse(right.startISO);
-      if (Number.isFinite(leftStart) && Number.isFinite(rightStart) && leftStart !== rightStart) {
-        return leftStart - rightStart;
-      }
-      const weekdayOrder = WEEK_DAYS.indexOf(left.weekday) - WEEK_DAYS.indexOf(right.weekday);
-      if (weekdayOrder !== 0) return weekdayOrder;
-      return left.time.localeCompare(right.time);
+    return [...sessions].sort((a, b) => {
+      const order = WEEK_DAYS.indexOf(a.weekday) - WEEK_DAYS.indexOf(b.weekday);
+      if (order !== 0) return order;
+      return a.time.localeCompare(b.time);
     });
   }, [sessions]);
 
@@ -430,191 +420,94 @@ export default function SupplierLiveScheduleCalendarPage() {
           <>
             <Btn tone="ghost" onClick={() => safeNav("/supplier/live-dashboard")}>Live Dashboard</Btn>
             <Btn tone="ghost" onClick={() => safeNav("/supplier/dealz-marketplace")}>Dealz Marketplace</Btn>
-            <Btn tone="brand" onClick={() => safeNav("/supplier/live-dashboard")}>New Live Session</Btn>
+            <Btn tone="brand" onClick={() => safeNav("/supplier/live-dashboard?drawer=newSession")}>New Live Session</Btn>
           </>
         }
       />
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-6 overflow-y-auto overflow-x-hidden">
-        {workspaceLoading ? (
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-            Loading live schedule workspace...
-          </div>
-        ) : workspaceError ? (
-          <div className="rounded-2xl border border-rose-200 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20 p-6 text-sm text-rose-700 dark:text-rose-300">
-            <div className="font-semibold dark:font-bold">Unable to load live schedule workspace.</div>
-            <div className="mt-1">{workspaceError}</div>
-            <div className="mt-3">
-              <Btn tone="brand" onClick={() => void loadWorkspace()}>Retry</Btn>
-            </div>
-          </div>
-        ) : (
-          <div className="w-full max-w-full flex flex-col gap-3">
-            {/* AI suggestions + view toggle */}
-            <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">🤖</span>
-                  <div>
-                    <h2 className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-0.5">
-                      Best slots this week for your audience
-                    </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-300">
-                      Based on your last 60 days, timezone and regions.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 text-xs bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full transition-colors px-1 py-0.5">
-                  {[
-                    { key: "week", label: "Week" },
-                    { key: "month", label: "Month" },
-                    { key: "agenda", label: "Agenda" }
-                  ].map((t) => (
-                    <button
-                      key={t.key}
-                      className={`px-3 py-1 rounded-full text-xs transition-colors ${viewMode === t.key
-                        ? "bg-[#f77f00] text-white"
-                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                        }`}
-                      onClick={() => setViewMode(t.key)}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+        <div className="w-full max-w-full flex flex-col gap-3">
+          {/* AI suggestions + view toggle */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🤖</span>
+                <div>
+                  <h2 className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-0.5">
+                    Best slots this week for your audience
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-300">
+                    Based on your last 60 days, timezone and regions.
+                  </p>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
-                {aiSlots.length ? aiSlots.map((slot) => (
-                  <div
-                    key={slot.id}
-                    className="border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 flex flex-col gap-0.5 transition-colors"
+              <div className="flex items-center gap-1 text-xs bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full transition-colors px-1 py-0.5">
+                {[
+                  { key: "week", label: "Week" },
+                  { key: "month", label: "Month" },
+                  { key: "agenda", label: "Agenda" }
+                ].map((t) => (
+                  <button
+                    key={t.key}
+                    className={`px-3 py-1 rounded-full text-xs transition-colors ${viewMode === t.key
+                      ? "bg-[#f77f00] text-white"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                      }`}
+                    onClick={() => setViewMode(t.key)}
                   >
-                    <div className="text-sm font-semibold dark:font-bold text-slate-800 dark:text-slate-50">
-                      {slot.label}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-300">{slot.reason}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-300">
-                      Best for: <span className="font-medium">{slot.recommendedFor}</span>
-                    </div>
-                  </div>
-                )) : (
-                  <div className="md:col-span-3 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-300">
-                    No AI slot suggestions available yet.
-                  </div>
-                )}
+                    {t.label}
+                  </button>
+                ))}
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
+              {AI_SLOTS.map((slot) => (
+                <div
+                  key={slot.id}
+                  className="border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 flex flex-col gap-0.5 transition-colors"
+                >
+                  <div className="text-sm font-semibold dark:font-bold text-slate-800 dark:text-slate-50">
+                    {slot.label}
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-300">{slot.reason}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-300">
+                    Best for: <span className="font-medium">{slot.recommendedFor}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Conflict warnings */}
+          {conflicts.length > 0 ? (
+            <section className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-2xl px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex flex-col gap-1 transition-colors">
+              <div className="flex items-center gap-1">
+                <span>⚠️</span>
+                <span className="font-semibold dark:font-bold text-sm">Potential conflicts & workload warnings</span>
+              </div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {conflicts.map((msg, idx) => (
+                  <li key={idx}>{msg}</li>
+                ))}
+              </ul>
             </section>
+          ) : null}
 
-            {/* Conflict warnings */}
-            {conflicts.length > 0 ? (
-              <section className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-2xl px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex flex-col gap-1 transition-colors">
-                <div className="flex items-center gap-1">
-                  <span>⚠️</span>
-                  <span className="font-semibold dark:font-bold text-sm">Potential conflicts & workload warnings</span>
-                </div>
-                <ul className="list-disc pl-4 space-y-0.5">
-                  {conflicts.map((msg, idx) => (
-                    <li key={idx}>{msg}</li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {/* Calendar + agenda */}
-            <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start text-sm">
-              {/* Calendar View (Week, Month, or Agenda) */}
-              {viewMode === "month" ? (
-                <MonthView sessions={sessions} onSelectSession={setSelectedSession} />
-              ) : viewMode === "agenda" ? (
-                <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Full Agenda</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-300">All upcoming sessions and rehearsals.</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {agendaSessions.map((session) => (
-                      <AgendaRow
-                        key={session.id}
-                        session={session}
-                        onSelect={() => setSelectedSession(session)}
-                        onStartRehearsal={() => handleStartRehearsal(session)}
-                        onOpenBuilder={() => handleOpenBuilder(session)}
-                        onRequestReschedule={() => handleRequestReschedule(session)}
-                      />
-                    ))}
+          {/* Calendar + agenda */}
+          <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start text-sm">
+            {/* Calendar View (Week, Month, or Agenda) */}
+            {viewMode === "month" ? (
+              <MonthView sessions={sessions} onSelectSession={setSelectedSession} />
+            ) : viewMode === "agenda" ? (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Full Agenda</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">All upcoming sessionz and rehearsals.</p>
                   </div>
                 </div>
-              ) : (
-                <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Week view</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-300">Tap a session to see scripts, assets and products.</p>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-300">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                      <span>Confirmed</span>
-                      <span className="h-2 w-2 rounded-full bg-amber-500 ml-2" />
-                      <span>Draft / At risk</span>
-                    </div>
-                  </div>
-
-                  <div className="w-full overflow-x-auto pb-2">
-                    <div className="grid grid-cols-7 gap-1 md:gap-1.5 text-xs min-w-[700px] md:min-w-0">
-                      {WEEK_DAYS.map((day) => {
-                        const daySessions = sessionsByDay[day] || [];
-                        return (
-                          <div
-                            key={day}
-                            className="min-h-[120px] border border-slate-100 dark:border-slate-700 rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 flex flex-col transition-colors"
-                          >
-                            <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center justify-between">
-                              <span>{day}</span>
-                              <span className="text-[10px] text-slate-400 dark:text-slate-400">{daySessions.length} live</span>
-                            </div>
-                            <div className="flex-1 p-1 space-y-1 overflow-y-auto">
-                              {daySessions.map((session) => (
-                                <button
-                                  key={session.id}
-                                  className={`w-full text-left rounded-lg px-1.5 py-1 border text-xs truncate transition-colors ${session.status === "Confirmed"
-                                    ? "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300"
-                                    : "bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300"
-                                    }`}
-                                  onClick={() => setSelectedSession(session)}
-                                >
-                                  <div className="font-medium truncate">{session.time}</div>
-                                  <div className="truncate">{session.campaign}</div>
-                                  <div className="mt-0.5 flex items-center gap-1">
-                                    <span className="text-[10px] opacity-90">{session.hostRole === "Supplier" ? "Supplier-hosted" : "Creator-hosted"}</span>
-                                  </div>
-                                </button>
-                              ))}
-
-                              {daySessions.length === 0 ? (
-                                <div className="text-[10px] text-slate-400 dark:text-slate-500 italic">No sessions</div>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Agenda list */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Agenda</h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-300">
-                    {agendaSessions.length} sessions in the next 7 days
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
+                <div className="space-y-2">
                   {agendaSessions.map((session) => (
                     <AgendaRow
                       key={session.id}
@@ -627,9 +520,88 @@ export default function SupplierLiveScheduleCalendarPage() {
                   ))}
                 </div>
               </div>
-            </section>
-          </div>
-        )}
+            ) : (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Week view</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">Tap a session to see scripts, assets and products.</p>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    <span>Confirmed</span>
+                    <span className="h-2 w-2 rounded-full bg-amber-500 ml-2" />
+                    <span>Draft / At risk</span>
+                  </div>
+                </div>
+
+                <div className="w-full overflow-x-auto pb-2">
+                  <div className="grid grid-cols-7 gap-1 md:gap-1.5 text-xs min-w-[700px] md:min-w-0">
+                    {WEEK_DAYS.map((day) => {
+                      const daySessions = sessionsByDay[day] || [];
+                      return (
+                        <div
+                          key={day}
+                          className="min-h-[120px] border border-slate-100 dark:border-slate-700 rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 flex flex-col transition-colors"
+                        >
+                          <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                            <span>{day}</span>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-400">{daySessions.length} live</span>
+                          </div>
+                          <div className="flex-1 p-1 space-y-1 overflow-y-auto">
+                            {daySessions.map((s) => (
+                              <button
+                                key={s.id}
+                                className={`w-full text-left rounded-lg px-1.5 py-1 border text-xs truncate transition-colors ${s.status === "Confirmed"
+                                  ? "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300"
+                                  : "bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300"
+                                  }`}
+                                onClick={() => setSelectedSession(s)}
+                              >
+                                <div className="font-medium truncate">{s.time}</div>
+                                <div className="truncate">{s.campaign}</div>
+                                <div className="mt-0.5 flex items-center gap-1">
+                                  <span className="text-[10px] opacity-90">{s.hostRole === "Supplier" ? "Supplier-hosted" : "Creator-hosted"}</span>
+                                </div>
+                              </button>
+                            ))}
+
+                            {daySessions.length === 0 ? (
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 italic">No sessions</div>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Agenda list */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Agenda</h3>
+                <span className="text-xs text-slate-500 dark:text-slate-300">
+                  {agendaSessions.length} sessionz in the next 7 days
+                </span>
+              </div>
+
+              <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
+                {agendaSessions.map((session) => (
+                  <AgendaRow
+                    key={session.id}
+                    session={session}
+                    onSelect={() => setSelectedSession(session)}
+                    onStartRehearsal={() => handleStartRehearsal(session)}
+                    onOpenBuilder={() => handleOpenBuilder(session)}
+                    onRequestReschedule={() => handleRequestReschedule(session)}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
 
       {selectedSession ? (
@@ -661,58 +633,17 @@ export default function SupplierLiveScheduleCalendarPage() {
 /* -------------------------------- Month View -------------------------------- */
 
 function MonthView({ sessions, onSelectSession }) {
-  const upcomingDates = sessions
-    .map((session) => new Date(session.startISO))
-    .filter((date) => Number.isFinite(date.getTime()))
-    .sort((left, right) => left.getTime() - right.getTime());
-  const baseMonth = upcomingDates[0] || new Date();
-  const [monthCursor, setMonthCursor] = useState(() => new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1));
-
-  useEffect(() => {
-    setMonthCursor(new Date(baseMonth.getFullYear(), baseMonth.getMonth(), 1));
-  }, [baseMonth.getFullYear(), baseMonth.getMonth()]);
-
-  const year = monthCursor.getFullYear();
-  const month = monthCursor.getMonth();
-  const monthStart = new Date(year, month, 1);
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const startOffset = (monthStart.getDay() + 6) % 7;
-
-  const sessionsByDay = useMemo(() => {
-    const mapped = {};
-    sessions.forEach((session) => {
-      const start = new Date(session.startISO);
-      if (!Number.isFinite(start.getTime())) return;
-      if (start.getFullYear() !== year || start.getMonth() !== month) return;
-      const day = start.getDate();
-      if (!mapped[day]) mapped[day] = [];
-      mapped[day].push(session);
-    });
-    return mapped;
-  }, [sessions, year, month]);
+  // Mock calendar grid (October 2026)
+  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  const startOffset = 3; // starts on Thursday
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">
-          {monthCursor.toLocaleDateString("en", { month: "long", year: "numeric" })}
-        </h3>
+        <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">October 2026</h3>
         <div className="flex gap-2">
-          <button
-            className="text-xs p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
-            type="button"
-            onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-          >
-            ◀
-          </button>
-          <button
-            className="text-xs p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
-            type="button"
-            onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-          >
-            ▶
-          </button>
+          <button className="text-xs p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" type="button">◀</button>
+          <button className="text-xs p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" type="button">▶</button>
         </div>
       </div>
       <div className="grid grid-cols-7 gap-1 text-xs mb-1">
@@ -726,7 +657,8 @@ function MonthView({ sessions, onSelectSession }) {
         ))}
 
         {days.map((day) => {
-          const daySessions = sessionsByDay[day] || [];
+          // Mock: match by day number in dateLabel
+          const daySessions = sessions.filter((s) => s.dateLabel.includes(` ${day} `));
           return (
             <div
               key={day}
@@ -744,7 +676,7 @@ function MonthView({ sessions, onSelectSession }) {
                       : "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700"
                       }`}
                   >
-                    {s.time.split(/[-–]/)[0]} {s.title}
+                    {s.time.split("–")[0]} {s.title}
                   </button>
                 ))}
               </div>
@@ -846,7 +778,7 @@ function RescheduleDrawer({ session, aiSlots, onClose, onSubmit }) {
   const handleSubmit = () => {
     if (!reason.trim() && !selectedSlot) return;
     const finalReason = selectedSlot
-      ? `Preferred slot: ${aiSlots.find((slot) => slot.id === selectedSlot)?.label}. ${reason}`
+      ? `Preferred slot: ${aiSlots.find((s) => s.id === selectedSlot)?.label}. ${reason}`
       : reason;
     onSubmit(finalReason);
   };

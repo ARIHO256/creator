@@ -353,6 +353,56 @@ function normalizeStatus(value) {
   return "Draft";
 }
 
+function normalizeCreatorHostRecord(raw) {
+  const record = asRecord(raw);
+  const profile = asRecord(record.profile);
+  const id = asString(record.id || record.userId || record.profileId);
+  if (!id) return null;
+  const handleRaw = asString(record.handle || profile.handle, id);
+  const handle = handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`;
+  return {
+    id,
+    name: asString(record.name || profile.name, "Creator"),
+    handle,
+    role: "Creator",
+    avatarUrl: asString(record.avatarUrl || record.photoUrl || profile.avatarUrl)
+  };
+}
+
+function normalizeSupplierHostRecord(raw, index = 0) {
+  const supplier = asRecord(raw);
+  const id = asString(supplier.ownerUserId || supplier.id, `supplier_host_${index + 1}`);
+  const name = asString(supplier.name, "Supplier");
+  const handleRaw = asString(supplier.handle);
+  const inferredHandle = handleRaw || name.toLowerCase().replace(/[^a-z0-9]+/g, "") || `supplier${index + 1}`;
+  return {
+    id,
+    name,
+    handle: inferredHandle.startsWith("@") ? inferredHandle : `@${inferredHandle}`,
+    role: "Supplier",
+    avatarUrl: asString(supplier.avatarUrl)
+  };
+}
+
+function mergeDashboardHosts({ workspaceHosts, suppliers, creatorRows }) {
+  const merged = [];
+  const seenIds = new Set();
+
+  const add = (host) => {
+    const normalized = asRecord(host);
+    const id = asString(normalized.id);
+    if (!id || seenIds.has(id)) return;
+    seenIds.add(id);
+    merged.push(normalized);
+  };
+
+  (workspaceHosts || []).forEach(add);
+  (suppliers || []).map((entry, index) => normalizeSupplierHostRecord(entry, index)).forEach(add);
+  (creatorRows || []).map((entry, index) => normalizeCreatorHostRecord(entry, index)).filter(Boolean).forEach(add);
+
+  return merged;
+}
+
 function normalizeLiveDashboardWorkspace(raw) {
   const payload = asRecord(raw);
   const suppliers = asArray(payload.suppliers).map((entry, index) => {
@@ -635,13 +685,21 @@ function NewLiveSessionDrawer({ open, onClose, suppliers, campaigns, hosts, onCr
 
             <div>
               <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Host</div>
-              <select value={hostId} onChange={(e) => setHostId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-bold text-slate-900 dark:text-slate-100 transition-colors">
+              <select
+                value={hostId}
+                onChange={(e) => setHostId(e.target.value)}
+                disabled={!scopedHosts.length}
+                className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-bold text-slate-900 dark:text-slate-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
                 {scopedHosts.map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.name} ({h.handle}) · {h.role}
                   </option>
                 ))}
               </select>
+              {!scopedHosts.length && selectedCampaign?.creatorUsage === "I will use a Creator" ? (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">No creators found in database yet.</div>
+              ) : null}
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                 Supplier note: Creator-hosted sessions follow collab contract rules; supplier-hosted skips creator negotiation.
               </div>
@@ -795,7 +853,7 @@ function SessionDetailsDrawer({ open, onClose, session, supplier, campaign, host
         </div>
 
         <div className="space-y-3">
-          <Card title="KPIs" subtitle="Performance snapshot (demo).">
+          <Card title="KPIs" subtitle="Performance snapshot.">
             <div className="grid grid-cols-2 gap-3">
               <MetricBox label="Peak viewers" value={session.peakViewers ? session.peakViewers.toLocaleString() : "—"} />
               <MetricBox label="Avg watch" value={session.avgWatchMin ? `${session.avgWatchMin.toFixed(1)}m` : "—"} />
@@ -808,7 +866,7 @@ function SessionDetailsDrawer({ open, onClose, session, supplier, campaign, host
             <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-[11px] text-emerald-800 dark:text-emerald-200 flex items-start gap-2 transition-colors">
               <span className="text-sm">✅</span>
               <div>
-                <div className="font-bold text-emerald-900 dark:text-emerald-100">Ops-ready (demo)</div>
+                <div className="font-bold text-emerald-900 dark:text-emerald-100">Ops-ready</div>
                 <div>Assets approved. Stream outputs configured. Schedule set.</div>
               </div>
             </div>
@@ -862,6 +920,12 @@ export function LiveBuilderDrawer({
       }
     },
   };
+  const generatedSessionIdRef = useRef(`ls_${Math.random().toString(16).slice(2, 8)}`);
+  const currentSessionId = session?.id || generatedSessionIdRef.current;
+  const currentSupplierId = session?.supplierId || campaign?.supplierId || null;
+  const currentCampaignId = session?.campaignId || campaign?.id || null;
+  const currentHostId = session?.hostId || "";
+  const currentHostRole = session?.hostRole === "Supplier" ? "Supplier" : "Creator";
   const [tab, setTab] = useState("Basics");
   const [saving, setSaving] = useState(false);
 
@@ -875,7 +939,7 @@ export function LiveBuilderDrawer({
   const [startTime, setStartTime] = useState("20:00");
   const [endTime, setEndTime] = useState("21:00");
 
-  // Streaming keys (demo)
+  // Streaming keys
   const [keys, setKeys] = useState({
     "TikTok Live": "",
     "Instagram Live": "",
@@ -893,7 +957,14 @@ export function LiveBuilderDrawer({
   const [ctaLink, setCtaLink] = useState("https://mldz.link/store/evworld");
   const [ctaPinned, setCtaPinned] = useState(false);
   const [incidentOpen, setIncidentOpen] = useState(false);
+  const [incidentNotes, setIncidentNotes] = useState("");
   const [clipsOpen, setClipsOpen] = useState(false);
+  const [clipSelections, setClipSelections] = useState({
+    intro: true,
+    product: true,
+    offer: true,
+    faq: false,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -911,7 +982,14 @@ export function LiveBuilderDrawer({
     setCtaLink("https://mldz.link/store/evworld");
     setCtaPinned(false);
     setIncidentOpen(false);
+    setIncidentNotes("");
     setClipsOpen(false);
+    setClipSelections({
+      intro: true,
+      product: true,
+      offer: true,
+      faq: false,
+    });
   }, [open, session?.id]);
 
   const togglePlatform = (p) => {
@@ -921,15 +999,118 @@ export function LiveBuilderDrawer({
   const startISO = useMemo(() => combineDateTime(dateISO, startTime), [dateISO, startTime]);
   const endISO = useMemo(() => combineDateTime(dateISO, endTime), [dateISO, endTime]);
 
+  const resolveBuilderStep = () => {
+    if (tab === "Basics") return "setup";
+    if (tab === "Stream") return "stream";
+    if (tab === "Overlays") return "creatives";
+    if (tab === "Safety") return "team";
+    if (tab === "Schedule") return "schedule";
+    return "review";
+  };
+
+  const buildSessionPayload = (status, workflowStatus = undefined) => {
+    const data = {
+      title: title.trim(),
+      hostRole: currentHostRole,
+      platforms,
+      desktopMode,
+      startISO,
+      endISO,
+      streamKeys: keys,
+      moderation: {
+        keywordBlock,
+        slowMode,
+      },
+      overlays: {
+        ctaLabel,
+        ctaLink,
+        ctaPinned,
+      },
+      ...(currentSupplierId ? { supplierId: currentSupplierId } : {}),
+      ...(currentCampaignId ? { campaignId: currentCampaignId } : {}),
+      ...(currentHostId ? { hostId: currentHostId } : {}),
+      ...(workflowStatus ? { workflowStatus } : {}),
+    };
+
+    return {
+      id: currentSessionId,
+      title: title.trim(),
+      status,
+      scheduledAt: startISO,
+      data,
+    };
+  };
+
+  const persistBuilderSnapshot = async (status) => {
+    await sellerBackendApi.saveLiveBuilder({
+      sessionId: currentSessionId,
+      status,
+      step: resolveBuilderStep(),
+      draft: {
+        id: currentSessionId,
+        dealId: dealId || null,
+        title,
+        desktopMode,
+        platforms,
+        dateISO,
+        startTime,
+        endTime,
+        streamKeys: keys,
+        keywordBlock,
+        slowMode,
+        ctaLabel,
+        ctaLink,
+        ctaPinned,
+        supplierId: currentSupplierId,
+        campaignId: currentCampaignId,
+        hostId: currentHostId,
+        hostRole: currentHostRole,
+      },
+      session: buildSessionPayload(status === "published" ? "scheduled" : "draft").data,
+    });
+  };
+
+  const upsertLiveSession = async (status, workflowStatus = undefined) => {
+    const body = buildSessionPayload(status, workflowStatus);
+    const patched = await sellerBackendApi.patchLiveSession(currentSessionId, body).catch(() => null);
+    if (!patched) {
+      await sellerBackendApi.createLiveSession(body);
+    }
+  };
+
+  const persistToolAction = async (toolKey, action, extra = {}) => {
+    await sellerBackendApi.patchLiveToolConfig(toolKey, {
+      sessionId: currentSessionId,
+      action,
+      requestedAt: new Date().toISOString(),
+      ...extra,
+    });
+  };
+
   const saveDraft = async () => {
     setSaving(true);
     await safeAsyncApi.run(
       async () => {
-        // simulate validation
         if (!title.trim()) throw new Error("missing title");
+        await sellerBackendApi.ensureWorkspaceRole();
+        await persistBuilderSnapshot("draft");
+        await upsertLiveSession("draft");
+        await persistToolAction("streaming", "save_stream_config", {
+          platforms,
+          streamKeys: keys,
+        });
+        await persistToolAction("overlays", "save_overlay_config", {
+          ctaLabel,
+          ctaLink,
+          ctaPinned,
+        });
+        await persistToolAction("safety", "save_moderation_config", {
+          keywordBlock,
+          slowMode,
+        });
         return true;
       },
-      { successMessage: "Live Builder draft saved", errorMessage: "Save failed: fill required fields", delay: 800 }
+      { successMessage: "Live Builder draft saved.", errorMessage: "Save failed: fill required fields.", delay: 0 }
     );
     setSaving(false);
   };
@@ -938,19 +1119,30 @@ export function LiveBuilderDrawer({
     await safeAsyncApi.run(
       async () => {
         if (!platforms.length) throw new Error("missing platforms");
+        await sellerBackendApi.ensureWorkspaceRole();
+        await persistToolAction("streaming", "preflight_validate", {
+          platforms,
+          streamKeys: keys,
+          startISO,
+          endISO,
+        });
         return true;
       },
-      { successMessage: "Preflight OK (demo)", errorMessage: "Preflight blocked: choose at least one platform", delay: 900 }
+      { successMessage: "Preflight request sent.", errorMessage: "Preflight blocked: choose at least one platform.", delay: 0 }
     );
   };
 
   const publish = async () => {
     const submitted = await safeAsyncApi.run(
       async () => {
-        // In production: enforce approvals and lock windows.
+        if (!title.trim()) throw new Error("missing title");
+        if (!platforms.length) throw new Error("missing platforms");
+        await sellerBackendApi.ensureWorkspaceRole();
+        await persistBuilderSnapshot("published");
+        await upsertLiveSession("scheduled", "ready_for_approval");
         return true;
       },
-      { successMessage: "Submitted for approvals", errorMessage: "Submission failed", delay: 900 }
+      { successMessage: "Submitted for approvals.", errorMessage: "Submission failed.", delay: 0 }
     );
     if (!submitted) return;
     onClose?.();
@@ -1059,7 +1251,7 @@ export function LiveBuilderDrawer({
           ) : null}
 
           {tab === "Stream" ? (
-            <Card title="Stream to Platforms" subtitle="Keys, outputs, and health (demo)">
+            <Card title="Stream to Platforms" subtitle="Keys, outputs, and health">
               <div className="grid sm:grid-cols-2 gap-3">
                 {platforms.length ? (
                   platforms.map((p) => (
@@ -1072,10 +1264,38 @@ export function LiveBuilderDrawer({
                         className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100"
                       />
                       <div className="mt-2 flex items-center gap-2">
-                        <SoftButton onClick={() => toastApi.showInfo(`Test stream started for ${p} (demo)`)}>
+                        <SoftButton
+                          onClick={() =>
+                            safeAsyncApi.run(
+                              async () => {
+                                await sellerBackendApi.ensureWorkspaceRole();
+                                await persistToolAction("streaming", "test_stream", {
+                                  platform: p,
+                                  streamKey: keys[p] || "",
+                                });
+                                return true;
+                              },
+                              { successMessage: `Test stream started for ${p}.`, delay: 0 },
+                            )
+                          }
+                        >
                           Test
                         </SoftButton>
-                        <SoftButton onClick={() => toastApi.showSuccess(`Health check OK for ${p} (demo)`)}>
+                        <SoftButton
+                          onClick={() =>
+                            safeAsyncApi.run(
+                              async () => {
+                                await sellerBackendApi.ensureWorkspaceRole();
+                                await persistToolAction("streaming", "health_check", {
+                                  platform: p,
+                                  streamKey: keys[p] || "",
+                                });
+                                return true;
+                              },
+                              { successMessage: `Health check requested for ${p}.`, delay: 0 },
+                            )
+                          }
+                        >
                           Health
                         </SoftButton>
                       </div>
@@ -1136,7 +1356,18 @@ export function LiveBuilderDrawer({
                       <input type="checkbox" checked={slowMode} onChange={(e) => setSlowMode(e.target.checked)} />
                       Enable slow mode
                     </label>
-                    <SoftButton onClick={() => safeAsyncApi.run(async () => true, { successMessage: "Emergency mute activated (demo)", delay: 700 })}>
+                    <SoftButton
+                      onClick={() =>
+                        safeAsyncApi.run(
+                          async () => {
+                            await sellerBackendApi.ensureWorkspaceRole();
+                            await persistToolAction("safety", "emergency_mute");
+                            return true;
+                          },
+                          { successMessage: "Emergency mute requested.", delay: 0 },
+                        )
+                      }
+                    >
                       Emergency mute
                     </SoftButton>
                     <SoftButton onClick={() => setIncidentOpen(true)}>Report incident</SoftButton>
@@ -1179,7 +1410,20 @@ export function LiveBuilderDrawer({
                   <div className="text-[12px] font-bold text-slate-900 dark:text-slate-100">Replay publish</div>
                   <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Auto publish to Replays & Clips once approved.</div>
                   <div className="mt-2 flex items-center gap-2">
-                    <SoftButton onClick={() => toastApi.showSuccess("Replay publish scheduled (demo)")}>Schedule</SoftButton>
+                    <SoftButton
+                      onClick={() =>
+                        safeAsyncApi.run(
+                          async () => {
+                            await sellerBackendApi.ensureWorkspaceRole();
+                            await persistToolAction("post-live", "schedule_replay_publish");
+                            return true;
+                          },
+                          { successMessage: "Replay publish scheduled.", delay: 0 },
+                        )
+                      }
+                    >
+                      Schedule
+                    </SoftButton>
                     <SoftButton onClick={() => setClipsOpen(true)}>Generate clips</SoftButton>
                   </div>
                 </div>
@@ -1187,8 +1431,34 @@ export function LiveBuilderDrawer({
                   <div className="text-[12px] font-bold text-slate-900 dark:text-slate-100">Boosters</div>
                   <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Retarget with Shoppable Adz cutdowns.</div>
                   <div className="mt-2 flex items-center gap-2">
-                    <SoftButton onClick={() => toastApi.showInfo("Create Adz Booster (demo)")}>Create booster</SoftButton>
-                    <SoftButton onClick={() => toastApi.showInfo("Export share cards (demo)")}>Export cards</SoftButton>
+                    <SoftButton
+                      onClick={() =>
+                        safeAsyncApi.run(
+                          async () => {
+                            await sellerBackendApi.ensureWorkspaceRole();
+                            await persistToolAction("post-live", "create_booster");
+                            return true;
+                          },
+                          { successMessage: "Adz booster creation started.", delay: 0 },
+                        )
+                      }
+                    >
+                      Create booster
+                    </SoftButton>
+                    <SoftButton
+                      onClick={() =>
+                        safeAsyncApi.run(
+                          async () => {
+                            await sellerBackendApi.ensureWorkspaceRole();
+                            await persistToolAction("post-live", "export_cards");
+                            return true;
+                          },
+                          { successMessage: "Share-card export queued.", delay: 0 },
+                        )
+                      }
+                    >
+                      Export cards
+                    </SoftButton>
                   </div>
                 </div>
               </div>
@@ -1232,20 +1502,32 @@ export function LiveBuilderDrawer({
       >
         <div className="space-y-3">
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/50 p-3 text-[12px] text-slate-700 dark:text-slate-300">
-            Session: <span className="font-bold text-slate-900 dark:text-slate-100">{session?.id || "N/A"}</span>
+            Session: <span className="font-bold text-slate-900 dark:text-slate-100">{currentSessionId}</span>
           </div>
           <textarea
             rows={6}
             placeholder="Describe what happened, when it happened, and what was affected."
+            value={incidentNotes}
+            onChange={(e) => setIncidentNotes(e.target.value)}
             className="w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100"
           />
           <div className="flex items-center justify-end gap-2">
             <SoftButton onClick={() => setIncidentOpen(false)}>Cancel</SoftButton>
             <PrimaryButton
-              onClick={() => {
-                setIncidentOpen(false);
-                toastApi.showSuccess("Incident report submitted");
-              }}
+              onClick={() =>
+                safeAsyncApi.run(
+                  async () => {
+                    await sellerBackendApi.ensureWorkspaceRole();
+                    await persistToolAction("safety", "incident_report", {
+                      notes: incidentNotes.trim(),
+                    });
+                    setIncidentOpen(false);
+                    setIncidentNotes("");
+                    return true;
+                  },
+                  { successMessage: "Incident report submitted.", delay: 0 },
+                )
+              }
             >
               Submit report
             </PrimaryButton>
@@ -1267,29 +1549,62 @@ export function LiveBuilderDrawer({
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <label className="flex items-center gap-2 text-[12px] font-bold text-slate-800 dark:text-slate-200">
-              <input type="checkbox" defaultChecked />
+              <input
+                type="checkbox"
+                checked={clipSelections.intro}
+                onChange={(e) =>
+                  setClipSelections((prev) => ({ ...prev, intro: e.target.checked }))
+                }
+              />
               Intro hook clip
             </label>
             <label className="flex items-center gap-2 text-[12px] font-bold text-slate-800 dark:text-slate-200">
-              <input type="checkbox" defaultChecked />
+              <input
+                type="checkbox"
+                checked={clipSelections.product}
+                onChange={(e) =>
+                  setClipSelections((prev) => ({ ...prev, product: e.target.checked }))
+                }
+              />
               Product demo clip
             </label>
             <label className="flex items-center gap-2 text-[12px] font-bold text-slate-800 dark:text-slate-200">
-              <input type="checkbox" defaultChecked />
+              <input
+                type="checkbox"
+                checked={clipSelections.offer}
+                onChange={(e) =>
+                  setClipSelections((prev) => ({ ...prev, offer: e.target.checked }))
+                }
+              />
               Offer highlight clip
             </label>
             <label className="flex items-center gap-2 text-[12px] font-bold text-slate-800 dark:text-slate-200">
-              <input type="checkbox" />
+              <input
+                type="checkbox"
+                checked={clipSelections.faq}
+                onChange={(e) =>
+                  setClipSelections((prev) => ({ ...prev, faq: e.target.checked }))
+                }
+              />
               FAQ clip
             </label>
           </div>
           <div className="flex items-center justify-end gap-2">
             <SoftButton onClick={() => setClipsOpen(false)}>Close</SoftButton>
             <PrimaryButton
-              onClick={() => {
-                setClipsOpen(false);
-                toastApi.showSuccess("Clip generation started");
-              }}
+              onClick={() =>
+                safeAsyncApi.run(
+                  async () => {
+                    await sellerBackendApi.ensureWorkspaceRole();
+                    await persistToolAction("post-live", "generate_clips", {
+                      clips: clipSelections,
+                    });
+                    setClipsOpen(false);
+                    return true;
+                  },
+                  { successMessage: "Clip generation started.", delay: 0 },
+                )
+              }
             >
               Generate clips
             </PrimaryButton>
@@ -1319,8 +1634,6 @@ export default function SupplierLiveDashboardPage() {
   const toastApi = useToast();
   const { run, isPending } = useAsyncAction(toastApi);
 
-  const [workspaceLoading, setWorkspaceLoading] = useState(true);
-  const [workspaceError, setWorkspaceError] = useState("");
   const [sessions, setSessions] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -1373,19 +1686,22 @@ export default function SupplierLiveDashboardPage() {
     navigate(target);
   };
 
-  async function loadWorkspace({ silent = false } = {}) {
-    if (!silent) {
-      setWorkspaceLoading(true);
-      setWorkspaceError("");
-    }
+  async function loadWorkspace() {
     try {
       await sellerBackendApi.ensureWorkspaceRole();
+      const creatorsPromise = sellerBackendApi.getAllCreators().catch(() => []);
       const response = await sellerBackendApi.getLiveDashboardWorkspace();
+      const creatorRows = await creatorsPromise;
       const workspace = normalizeLiveDashboardWorkspace(response);
+      const mergedHosts = mergeDashboardHosts({
+        workspaceHosts: workspace.hosts,
+        suppliers: workspace.suppliers,
+        creatorRows: Array.isArray(creatorRows) ? creatorRows : []
+      });
       setSessions(workspace.sessions);
       setSuppliers(workspace.suppliers);
       setCampaigns(workspace.campaigns);
-      setHosts(workspace.hosts);
+      setHosts(mergedHosts);
       setSupplierId((prev) => {
         if (prev === "all") return "all";
         return workspace.suppliers.some((item) => item.id === prev) ? prev : "all";
@@ -1399,15 +1715,7 @@ export default function SupplierLiveDashboardPage() {
         error instanceof Error && error.message
           ? error.message
           : "Failed to load live dashboard workspace.";
-      if (!silent) {
-        setWorkspaceError(message);
-        setSessions([]);
-        setSuppliers([]);
-        setCampaigns([]);
-        setHosts([]);
-      }
-    } finally {
-      if (!silent) setWorkspaceLoading(false);
+      toastApi.showError(message);
     }
   }
 
@@ -1608,7 +1916,7 @@ export default function SupplierLiveDashboardPage() {
           }
         });
 
-        await loadWorkspace({ silent: true });
+        await loadWorkspace();
         openBuilderPage(created?.id || payload.id);
       },
       {
@@ -1620,25 +1928,6 @@ export default function SupplierLiveDashboardPage() {
   }
 
   const hostPrimaryLabel = toolHost?.role === "Supplier" ? "Supplier Studio (primary)" : "Creator App (primary)";
-
-  if (workspaceLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
-        Loading live dashboard workspace…
-      </div>
-    );
-  }
-
-  if (workspaceError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950 p-6">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-700 dark:text-slate-300 space-y-3">
-          <div>{workspaceError}</div>
-          <PrimaryButton onClick={() => void loadWorkspace()}>Retry</PrimaryButton>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 transition-colors">
@@ -1670,7 +1959,7 @@ export default function SupplierLiveDashboardPage() {
           <main className="min-w-0">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 lg:gap-3">
               <div className="lg:col-span-7 space-y-2.5">
-                <Card title="Viewers trend" subtitle="Last 14 days (demo)">
+                <Card title="Viewers trend" subtitle="Last 14 days">
                   <MiniLineChart values={viewersTrend} height={78} />
                   <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <KpiTile label="Total GMV" value={`$${kpis.gmv.toLocaleString()}`} />
@@ -1762,7 +2051,19 @@ export default function SupplierLiveDashboardPage() {
                       primary={{ label: "Open", onClick: () => toolSession && safeNav(`${ROUTES.overlaysCTAsPro}&sessionId=${encodeURIComponent(toolSession.id)}`) }}
                       secondary={{
                         label: isPending ? "Exporting…" : "Export pack",
-                        onClick: () => run(async () => true, { successMessage: "Overlays pack exported successfully!", delay: 800 })
+                        onClick: () =>
+                          toolSession &&
+                          run(
+                            async () => {
+                              await sellerBackendApi.patchLiveToolConfig("overlays", {
+                                sessionId: toolSession.id,
+                                action: "export_pack",
+                                requestedAt: new Date().toISOString(),
+                              });
+                              return true;
+                            },
+                            { successMessage: "Overlays pack export queued.", delay: 0 },
+                          )
                       }}
                       disabled={!toolSession}
                       secondaryDisabled={!toolSession || isPending}
@@ -1775,7 +2076,19 @@ export default function SupplierLiveDashboardPage() {
                       primary={{ label: "Open", onClick: () => toolSession && safeNav(`${ROUTES.safetyModeration}&sessionId=${encodeURIComponent(toolSession.id)}`) }}
                       secondary={{
                         label: isPending ? "Muting…" : "Emergency mute",
-                        onClick: () => run(async () => true, { successMessage: "Emergency mute activated for all chats!", delay: 900 })
+                        onClick: () =>
+                          toolSession &&
+                          run(
+                            async () => {
+                              await sellerBackendApi.patchLiveToolConfig("safety", {
+                                sessionId: toolSession.id,
+                                action: "emergency_mute",
+                                requestedAt: new Date().toISOString(),
+                              });
+                              return true;
+                            },
+                            { successMessage: "Emergency mute requested.", delay: 0 },
+                          )
                       }}
                       disabled={!toolSession}
                       secondaryDisabled={!toolSession || isPending}
@@ -1788,7 +2101,19 @@ export default function SupplierLiveDashboardPage() {
                       primary={{ label: "Open", onClick: () => toolSession && safeNav(`${ROUTES.postLivePublisher}&sessionId=${encodeURIComponent(toolSession.id)}`) }}
                       secondary={{
                         label: isPending ? "Generating…" : "Generate cards",
-                        onClick: () => run(async () => true, { successMessage: "Replay share cards generated!", delay: 900 })
+                        onClick: () =>
+                          toolSession &&
+                          run(
+                            async () => {
+                              await sellerBackendApi.patchLiveToolConfig("post-live", {
+                                sessionId: toolSession.id,
+                                action: "generate_share_cards",
+                                requestedAt: new Date().toISOString(),
+                              });
+                              return true;
+                            },
+                            { successMessage: "Replay share-card generation queued.", delay: 0 },
+                          )
                       }}
                       disabled={!toolSession}
                       secondaryDisabled={!toolSession || isPending}
@@ -1925,13 +2250,13 @@ export default function SupplierLiveDashboardPage() {
                   </div>
                 </div>
 
-                <Card title="Platforms" subtitle="Where viewers are coming from (demo)">
+                <Card title="Platforms" subtitle="Where viewers are coming from">
                   <BarList items={byPlatform} />
                 </Card>
               </div>
 
               <div className="lg:col-span-12">
-                <Card title="Go‑Live readiness" subtitle="Lightweight preflight summary (demo logic).">
+                <Card title="Go‑Live readiness" subtitle="Lightweight preflight summary.">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                     {readiness.items.map((it) => (
                       <div key={it.label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 flex items-center justify-between gap-2 transition-colors">

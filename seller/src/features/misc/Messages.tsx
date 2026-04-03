@@ -45,6 +45,7 @@ import type {
   ThreadTag,
 } from "../../data/pageTypes";
 import { sellerBackendApi } from "../../lib/backendApi";
+import { useThemeMode } from "../../theme/themeMode";
 
 /**
  * SupplierHub Premium Messages Page
@@ -163,7 +164,7 @@ function Badge({
         "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-extrabold",
         tone === "green" && "bg-emerald-50 text-emerald-700",
         tone === "orange" && "bg-orange-50 text-orange-700",
-        tone === "slate" && "bg-slate-100 text-slate-700",
+        tone === "slate" && "bg-slate-100 text-slate-700 dark:text-slate-200",
         tone === "danger" && "bg-rose-50 text-rose-700"
       )}
     >
@@ -191,7 +192,7 @@ function IconBtn({ label, onClick, children }: { label: string; onClick?: () => 
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="grid h-10 w-10 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 text-slate-800 transition hover:bg-gray-50 dark:hover:bg-slate-800"
+      className="grid h-10 w-10 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 text-slate-800 dark:text-slate-100 transition hover:bg-gray-50 dark:hover:bg-slate-800"
     >
       {children}
     </button>
@@ -215,7 +216,7 @@ function PillBtn({
       onClick={onClick}
       className={cx(
         "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-extrabold transition",
-        active ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200/70 bg-white dark:bg-slate-900/70 text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
+        active ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200/70 bg-white dark:bg-slate-900/70 text-slate-800 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-800"
       )}
     >
       <Icon className="h-4 w-4" />
@@ -250,19 +251,19 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
                   t.tone === "success" && "bg-emerald-50 text-emerald-700",
                   t.tone === "warning" && "bg-orange-50 text-orange-700",
                   t.tone === "danger" && "bg-rose-50 text-rose-700",
-                  (!t.tone || t.tone === "default") && "bg-slate-100 text-slate-700"
+                  (!t.tone || t.tone === "default") && "bg-slate-100 text-slate-700 dark:text-slate-200"
                 )}
               >
                 <Sparkles className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-black text-slate-900">{t.title}</div>
-                {t.message ? <div className="mt-1 text-xs font-semibold text-slate-500">{t.message}</div> : null}
+                <div className="text-sm font-black text-slate-900 dark:text-slate-100">{t.title}</div>
+                {t.message ? <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{t.message}</div> : null}
                 {t.action ? (
                   <button
                     type="button"
                     onClick={t.action.onClick}
-                    className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-extrabold text-slate-800"
+                    className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     {t.action.label}
                     <ArrowUpRight className="h-4 w-4" />
@@ -272,7 +273,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
               <button
                 type="button"
                 onClick={() => dismiss(t.id)}
-                className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:bg-slate-950"
+                className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950"
                 aria-label="Dismiss"
               >
                 <X className="h-4 w-4" />
@@ -320,8 +321,8 @@ function Modal({
               <div className="border-b border-slate-200/70 px-5 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-black text-slate-900">{title}</div>
-                    {subtitle ? <div className="mt-1 text-xs font-semibold text-slate-500">{subtitle}</div> : null}
+                    <div className="text-sm font-black text-slate-900 dark:text-slate-100">{title}</div>
+                    {subtitle ? <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{subtitle}</div> : null}
                   </div>
                   <IconBtn label="Close" onClick={onClose}>
                     <X className="h-4 w-4" />
@@ -372,8 +373,8 @@ function Drawer({
               <div className="border-b border-slate-200/70 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-black text-slate-900">{title}</div>
-                    {subtitle ? <div className="mt-1 text-xs font-semibold text-slate-500">{subtitle}</div> : null}
+                    <div className="text-sm font-black text-slate-900 dark:text-slate-100">{title}</div>
+                    {subtitle ? <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{subtitle}</div> : null}
                   </div>
                   <IconBtn label="Close" onClick={onClose}>
                     <X className="h-4 w-4" />
@@ -395,12 +396,12 @@ function EmptyState({ title, message }: { title: string; message: string }) {
   return (
     <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-6">
       <div className="flex items-start gap-3">
-        <div className="grid h-12 w-12 place-items-center rounded-3xl bg-slate-100 text-slate-700">
+        <div className="grid h-12 w-12 place-items-center rounded-3xl bg-slate-100 text-slate-700 dark:text-slate-200">
           <Sparkles className="h-6 w-6" />
         </div>
         <div>
-          <div className="text-lg font-black text-slate-900">{title}</div>
-          <div className="mt-1 text-sm font-semibold text-slate-500">{message}</div>
+          <div className="text-lg font-black text-slate-900 dark:text-slate-100">{title}</div>
+          <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{message}</div>
         </div>
       </div>
     </div>
@@ -417,7 +418,7 @@ function AttachmentRow({ a, onOpen }: { a: Attachment; onOpen: () => void }) {
       className="w-full rounded-2xl bg-black/5 p-2 text-left transition hover:bg-black/10"
     >
       <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/90 text-slate-700">
+        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/90 text-slate-700 dark:text-slate-200">
           {hasPreview && a.type === "image" ? (
             <img src={a.url} alt={a.name} className="h-full w-full object-cover" />
           ) : hasPreview && a.type === "video" ? (
@@ -427,12 +428,12 @@ function AttachmentRow({ a, onOpen }: { a: Attachment; onOpen: () => void }) {
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-extrabold text-slate-800">{a.name}</div>
-          <div className="mt-0.5 text-[11px] font-semibold text-slate-500">{a.sizeLabel}</div>
+          <div className="truncate text-xs font-extrabold text-slate-800 dark:text-slate-100">{a.name}</div>
+          <div className="mt-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">{a.sizeLabel}</div>
         </div>
         <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
       </div>
-      {a.caption ? <div className="mt-2 text-xs font-semibold text-slate-600 line-clamp-2">{a.caption}</div> : null}
+      {a.caption ? <div className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300 line-clamp-2">{a.caption}</div> : null}
     </button>
   );
 }
@@ -445,6 +446,8 @@ export default function MessagesPage({
   onNavigate?: NavigateFn;
 }) {
   const { role: activeRole, content } = useRolePageContent("messages", role);
+  const { resolvedMode } = useThemeMode();
+  const isDark = resolvedMode === "dark";
   const navigate: NavigateFn =
     onNavigate ??
     ((to: string) => {
@@ -655,20 +658,37 @@ export default function MessagesPage({
       proposal: "/mldz/collab/proposals",
     };
   }, [activeRole]);
+  const threadViewportStyle = useMemo<React.CSSProperties>(
+    () =>
+      isDark
+        ? {
+            backgroundColor: "#0b1220",
+            backgroundImage:
+              "radial-gradient(circle at 25% 20%, rgba(148,163,184,0.12) 0 2px, transparent 2px), radial-gradient(circle at 75% 60%, rgba(148,163,184,0.1) 0 2px, transparent 2px)",
+            backgroundSize: "28px 28px",
+          }
+        : {
+            backgroundColor: "#e5ddd5",
+            backgroundImage:
+              "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.28) 0 2px, transparent 2px), radial-gradient(circle at 75% 60%, rgba(255,255,255,0.28) 0 2px, transparent 2px)",
+            backgroundSize: "28px 28px",
+          },
+    [isDark]
+  );
 
   return (
     <div className="w-full">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="text-2xl font-black tracking-tight text-slate-900 md:text-3xl">Messages</div>
-          <div className="mt-1 text-sm font-semibold text-slate-500">WhatsApp-style chat with media/PDF/document attachments and per-file captions</div>
+          <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 md:text-3xl">Messages</div>
+          <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">WhatsApp-style chat with media/PDF/document attachments and per-file captions</div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setTemplateOpen(true)}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-800"
           >
             <StickyNote className="h-4 w-4" />
             Templates
@@ -676,7 +696,7 @@ export default function MessagesPage({
           <button
             type="button"
             onClick={exportThread}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-800"
           >
             <FileText className="h-4 w-4" />
             Export
@@ -706,7 +726,7 @@ export default function MessagesPage({
           <GlassCard className="overflow-hidden">
             <div className="border-b border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-black text-slate-900">Inbox</div>
+                <div className="text-sm font-black text-slate-900 dark:text-slate-100">Inbox</div>
                 <Badge tone="slate">{filteredThreads.length}</Badge>
               </div>
 
@@ -717,7 +737,7 @@ export default function MessagesPage({
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search threads"
-                    className="h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 pl-10 pr-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+                    className="h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 pl-10 pr-3 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-slate-300"
                   />
                 </div>
 
@@ -727,7 +747,7 @@ export default function MessagesPage({
                     onClick={() => setOnlyUnread((v) => !v)}
                     className={cx(
                       "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-extrabold",
-                      onlyUnread ? "border-orange-200 bg-orange-50 text-orange-800" : "border-slate-200/70 bg-white dark:bg-slate-900/70 text-slate-800"
+                      onlyUnread ? "border-orange-200 bg-orange-50 text-orange-800" : "border-slate-200/70 bg-white dark:bg-slate-900/70 text-slate-800 dark:text-slate-100"
                     )}
                   >
                     <Filter className="h-4 w-4" />
@@ -737,7 +757,7 @@ export default function MessagesPage({
                   <select
                     value={tagFilter}
                     onChange={(e) => setTagFilter(e.target.value as ThreadTag | "All")}
-                    className="h-9 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 text-xs font-extrabold text-slate-800"
+                    className="h-9 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <option value="All">All tags</option>
                     {content.tagOptions.map((tag) => (
@@ -750,7 +770,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => pushToast({ title: "Smart filters", message: "Wire smart filters to your backend.", tone: "default" })}
-                    className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800"
+                    className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <Tag className="h-4 w-4" />
                     Filters
@@ -782,18 +802,18 @@ export default function MessagesPage({
                         <div
                           className={cx(
                             "grid h-10 w-10 place-items-center rounded-2xl",
-                            active ? "bg-white dark:bg-slate-900 text-emerald-700" : "bg-slate-100 text-slate-700"
+                            active ? "bg-white dark:bg-slate-900 text-emerald-700" : "bg-slate-100 text-slate-700 dark:text-slate-200"
                           )}
                         >
                           <MessageCircle className="h-5 w-5" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <div className="truncate text-sm font-extrabold text-slate-900">{t.title}</div>
+                            <div className="truncate text-sm font-extrabold text-slate-900 dark:text-slate-100">{t.title}</div>
                             {t.unreadCount > 0 ? <Badge tone="orange">{t.unreadCount}</Badge> : null}
                             {t.priority === "high" ? <Badge tone="danger">High</Badge> : null}
                           </div>
-                          <div className="mt-1 truncate text-xs font-semibold text-slate-500">{t.lastMessage}</div>
+                          <div className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{t.lastMessage}</div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             {t.tags.slice(0, 2).map((tg) => (
                               <Badge key={tg} tone={tg === "MyLiveDealz" ? "orange" : "slate"}>
@@ -833,24 +853,38 @@ export default function MessagesPage({
         {/* Thread */}
         <div className={cx("md:col-span-8 xl:col-span-6", mobilePane !== "thread" && "hidden md:block")}>
           <GlassCard className="overflow-hidden">
-            <div className="border-b border-emerald-300/60 bg-emerald-600 p-4">
+            <div
+              className={cx(
+                "border-b p-4",
+                isDark
+                  ? "border-emerald-500/30 bg-gradient-to-r from-emerald-900/65 via-emerald-800/45 to-slate-900/90"
+                  : "border-emerald-300/60 bg-gradient-to-r from-emerald-500 to-emerald-600"
+              )}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <div className="truncate text-sm font-black text-white">{selectedThread?.title ?? "Select a thread"}</div>
+                    <div className={cx("truncate text-sm font-black", isDark ? "text-slate-100" : "text-white")}>
+                      {selectedThread?.title ?? "Select a thread"}
+                    </div>
                     {selectedThread?.tags?.includes("MyLiveDealz") ? <Badge tone="orange">MyLiveDealz</Badge> : <Badge tone="green">WhatsApp mode</Badge>}
                   </div>
-                  <div className="mt-1 truncate text-xs font-semibold text-emerald-50/90">
+                  <div className={cx("mt-1 truncate text-xs font-semibold", isDark ? "text-emerald-100/90" : "text-emerald-50/90")}>
                     {selectedThread ? selectedThread.participants.map((p) => p.name).join(" • ") : "Pick a conversation from the inbox"}
                   </div>
 
                   {sla ? (
-                    <div className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/95 px-3 py-2 text-xs font-extrabold">
+                    <div
+                      className={cx(
+                        "mt-3 inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-extrabold",
+                        isDark ? "border-emerald-300/20 bg-slate-900/85 text-slate-100" : "border-white/30 bg-white/95 text-slate-900 dark:text-slate-100"
+                      )}
+                    >
                       <Clock className="h-4 w-4 text-emerald-700" />
                       <span className={cx(sla.overdue ? "text-rose-700" : sla.near ? "text-orange-700" : "text-emerald-700")}>
                         {sla.overdue ? `SLA overdue by ${msToClock(Math.abs(sla.left))}` : `SLA reply in ${msToClock(sla.left)}`}
                       </span>
-                      <span className="text-slate-400">Due {fmtTime(new Date(sla.due).toISOString())}</span>
+                      <span className="text-slate-400 dark:text-slate-300">Due {fmtTime(new Date(sla.due).toISOString())}</span>
                     </div>
                   ) : null}
                 </div>
@@ -878,7 +912,7 @@ export default function MessagesPage({
                 <button
                   type="button"
                   onClick={() => setTranslateTo((v) => (v === "en" ? "fr" : v === "fr" ? "zh" : "en"))}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                 >
                   <Globe className="h-4 w-4" />
                   Translate to {translateTo.toUpperCase()}
@@ -888,7 +922,7 @@ export default function MessagesPage({
                 <button
                   type="button"
                   onClick={() => pushToast({ title: "Pinned", message: "Thread pinned to top.", tone: "success" })}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                 >
                   <Star className="h-4 w-4" />
                   Pin
@@ -897,7 +931,7 @@ export default function MessagesPage({
                 <button
                   type="button"
                   onClick={() => pushToast({ title: "Saved", message: "Thread saved as a view.", tone: "default" })}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                 >
                   <BadgeCheck className="h-4 w-4" />
                   Save
@@ -918,34 +952,42 @@ export default function MessagesPage({
             <div
               ref={scrollRef}
               className="max-h-[56vh] overflow-y-auto px-4 py-4"
-              style={{
-                backgroundColor: "#e5ddd5",
-                backgroundImage:
-                  "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.28) 0 2px, transparent 2px), radial-gradient(circle at 75% 60%, rgba(255,255,255,0.28) 0 2px, transparent 2px)",
-                backgroundSize: "28px 28px",
-              }}
+              style={threadViewportStyle}
             >
               {selectedThread ? (
                 <div className="space-y-2">
                   {threadMessages.map((m) => {
                     const isMe = m.sender === "me";
-                    const bubble = isMe ? "bg-[#d9fdd3] rounded-br-md" : "bg-white rounded-bl-md";
+                    const bubble = isMe
+                      ? isDark
+                        ? "rounded-br-md border border-emerald-700/40 bg-emerald-900/45"
+                        : "rounded-br-md bg-[#d9fdd3]"
+                      : isDark
+                      ? "rounded-bl-md border border-slate-700 bg-slate-800/90"
+                      : "rounded-bl-md bg-white";
                     const align = isMe ? "items-end" : "items-start";
                     const transText = translateOn && m.text.trim() ? pseudoTranslate(m.text, translateTo) : null;
 
                     return (
                       <div key={m.id} className={cx("flex flex-col", align)}>
                         <div className={cx("max-w-[92%] rounded-2xl px-3 py-2", bubble)}>
-                          {m.text.trim() ? <div className="text-sm font-semibold text-slate-800 whitespace-pre-wrap">{m.text}</div> : null}
+                          {m.text.trim() ? (
+                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-pre-wrap">{m.text}</div>
+                          ) : null}
 
                           {transText ? (
-                            <div className="mt-2 rounded-xl border border-slate-200/70 bg-gray-50 px-3 py-2">
+                            <div
+                              className={cx(
+                                "mt-2 rounded-xl border px-3 py-2",
+                                isDark ? "border-slate-700 bg-slate-900/70" : "border-slate-200/70 bg-gray-50"
+                              )}
+                            >
                               <div className="flex items-center gap-2">
-                                <Bot className="h-4 w-4 text-slate-700" />
-                                <div className="text-[11px] font-extrabold text-slate-700">Auto-translation</div>
+                                <Bot className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+                                <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200">Auto-translation</div>
                                 <span className="ml-auto"><Badge tone="slate">{translateTo.toUpperCase()}</Badge></span>
                               </div>
-                              <div className="mt-1 text-xs font-semibold text-slate-600 whitespace-pre-wrap">{transText}</div>
+                              <div className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{transText}</div>
                             </div>
                           ) : null}
 
@@ -957,7 +999,7 @@ export default function MessagesPage({
                             </div>
                           ) : null}
 
-                          <div className="mt-1 flex items-center justify-end gap-1 text-[10px] font-extrabold text-slate-400">
+                          <div className="mt-1 flex items-center justify-end gap-1 text-[10px] font-extrabold text-slate-400 dark:text-slate-300">
                             <span>{new Date(m.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                             {isMe ? <CheckCheck className="h-3.5 w-3.5 text-emerald-600" /> : null}
                           </div>
@@ -972,7 +1014,7 @@ export default function MessagesPage({
             </div>
 
             {/* Composer */}
-            <div className="border-t border-slate-200/70 bg-[#f0f2f5] p-4">
+            <div className={cx("border-t border-slate-200/70 p-4", isDark ? "bg-slate-900/85" : "bg-[#f0f2f5]")}>
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={fileInputRef}
@@ -989,7 +1031,7 @@ export default function MessagesPage({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-800"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                 >
                   <Paperclip className="h-4 w-4" />
                   Attach
@@ -998,7 +1040,7 @@ export default function MessagesPage({
                 <button
                   type="button"
                   onClick={() => setTemplateOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-800"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                 >
                   <StickyNote className="h-4 w-4" />
                   Insert template
@@ -1007,7 +1049,7 @@ export default function MessagesPage({
                 <button
                   type="button"
                   onClick={() => pushToast({ title: "SLA assistant", message: "This will suggest the best next reply.", tone: "default" })}
-                  className="ml-auto inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-extrabold text-slate-800"
+                  className="ml-auto inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                 >
                   <Sparkles className="h-4 w-4" />
                   Smart reply
@@ -1019,17 +1061,17 @@ export default function MessagesPage({
                   {composerFiles.map((a) => (
                     <div
                       key={a.id}
-                      className="rounded-2xl border border-slate-200/70 bg-white p-3"
+                      className="rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 p-3"
                     >
                       <div className="flex items-center gap-2">
                         {a.type === "image" && a.url ? (
                           <img src={a.url} alt={a.name} className="h-10 w-10 rounded-lg object-cover" />
                         ) : (
-                          React.createElement(attachmentIcon(a.type), { className: "h-5 w-5 text-slate-700" })
+                          React.createElement(attachmentIcon(a.type), { className: "h-5 w-5 text-slate-700 dark:text-slate-200" })
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-extrabold text-slate-800">{a.name}</div>
-                          <div className="text-[11px] font-semibold text-slate-500">{a.sizeLabel}</div>
+                          <div className="truncate text-xs font-extrabold text-slate-800 dark:text-slate-100">{a.name}</div>
+                          <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{a.sizeLabel}</div>
                         </div>
                         <button
                           type="button"
@@ -1042,7 +1084,7 @@ export default function MessagesPage({
                               })
                             )
                           }
-                          className="text-slate-400 hover:text-slate-700"
+                          className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
                           aria-label="Remove"
                         >
                           <X className="h-4 w-4" />
@@ -1055,7 +1097,7 @@ export default function MessagesPage({
                         }
                         rows={2}
                         placeholder="Add a caption"
-                        className="mt-2 w-full resize-none rounded-xl border border-slate-200/70 px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-slate-300"
+                        className="mt-2 w-full resize-none rounded-xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-slate-300"
                       />
                     </div>
                   ))}
@@ -1068,7 +1110,7 @@ export default function MessagesPage({
                   onChange={(e) => setComposer(e.target.value)}
                   placeholder="Type a message"
                   rows={2}
-                  className="min-h-[54px] w-full resize-none rounded-3xl border border-slate-200/70 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+                  className="min-h-[54px] w-full resize-none rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-slate-300"
                 />
                 <button
                   type="button"
@@ -1090,8 +1132,8 @@ export default function MessagesPage({
             <div className="border-b border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-black text-slate-900">Context and actions</div>
-                  <div className="mt-1 text-xs font-semibold text-slate-500">Convert chat into structured work</div>
+                  <div className="text-sm font-black text-slate-900 dark:text-slate-100">Context and actions</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Convert chat into structured work</div>
                 </div>
                 <IconBtn label="Close" onClick={() => setMobilePane("thread")}> 
                   <X className="h-4 w-4" />
@@ -1102,11 +1144,11 @@ export default function MessagesPage({
             <div className="space-y-3 p-4">
               <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-slate-700" />
-                  <div className="text-sm font-extrabold text-slate-900">Thread signals</div>
+                  <ShieldCheck className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+                  <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Thread signals</div>
                   <span className="ml-auto"><Badge tone={sla?.overdue ? "danger" : sla?.near ? "orange" : "green"}>{sla ? "SLA" : "No SLA"}</Badge></span>
                 </div>
-                <div className="mt-2 text-xs font-semibold text-slate-500">Tags help conversion and reporting.</div>
+                <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">Tags help conversion and reporting.</div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(selectedThread?.tags ?? []).map((t) => (
                     <Badge key={t} tone={t === "MyLiveDealz" ? "orange" : "slate"}>{t}</Badge>
@@ -1116,8 +1158,8 @@ export default function MessagesPage({
 
               <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-slate-700" />
-                  <div className="text-sm font-extrabold text-slate-900">Convert</div>
+                  <Sparkles className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+                  <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Convert</div>
                   <span className="ml-auto"><Badge tone="green">Premium</Badge></span>
                 </div>
 
@@ -1125,7 +1167,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => setConvertOpen("quote")}
-                    className="flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 hover:bg-gray-50 dark:bg-slate-950"
+                    className="flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 dark:text-slate-100 hover:bg-gray-50 dark:bg-slate-950"
                   >
                     <span className="flex items-center gap-3">
                       <span className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-50 text-emerald-700"><Briefcase className="h-5 w-5" /></span>
@@ -1137,10 +1179,10 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => setConvertOpen("booking")}
-                    className="flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 hover:bg-gray-50 dark:bg-slate-950"
+                    className="flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 dark:text-slate-100 hover:bg-gray-50 dark:bg-slate-950"
                   >
                     <span className="flex items-center gap-3">
-                      <span className="grid h-10 w-10 place-items-center rounded-2xl bg-slate-100 text-slate-700"><Calendar className="h-5 w-5" /></span>
+                      <span className="grid h-10 w-10 place-items-center rounded-2xl bg-slate-100 text-slate-700 dark:text-slate-200"><Calendar className="h-5 w-5" /></span>
                       Convert to Booking
                     </span>
                     <ChevronRight className="h-4 w-4 text-slate-300" />
@@ -1149,7 +1191,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => setConvertOpen("proposal")}
-                    className="flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 hover:bg-gray-50 dark:bg-slate-950"
+                    className="flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 dark:text-slate-100 hover:bg-gray-50 dark:bg-slate-950"
                   >
                     <span className="flex items-center gap-3">
                       <span className="grid h-10 w-10 place-items-center rounded-2xl bg-orange-50 text-orange-700"><Bot className="h-5 w-5" /></span>
@@ -1162,14 +1204,14 @@ export default function MessagesPage({
 
               <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
                 <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-slate-700" />
-                  <div className="text-sm font-extrabold text-slate-900">Shortcuts</div>
+                  <User className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+                  <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Shortcuts</div>
                 </div>
                 <div className="mt-3 grid gap-2">
                   <button
                     type="button"
                     onClick={() => pushToast({ title: "Saved", message: "Thread saved to favorites.", tone: "success" })}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <Star className="h-4 w-4" />
                     Favorite
@@ -1178,7 +1220,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => navigate("/status-center")}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <ShieldCheck className="h-4 w-4" />
                     Trust signals
@@ -1187,7 +1229,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => downloadText("message_rules.txt", "Example rules: No direct contacts, keep negotiation in-app, attach evidence for compliance.")}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <FileText className="h-4 w-4" />
                     Download rules
@@ -1209,11 +1251,11 @@ export default function MessagesPage({
         <div className="space-y-3">
           <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
             <div className="flex items-center gap-2">
-              <StickyNote className="h-4 w-4 text-slate-700" />
-              <div className="text-sm font-extrabold text-slate-900">Template library</div>
+              <StickyNote className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+              <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Template library</div>
               <span className="ml-auto"><Badge tone="slate">{templates.length}</Badge></span>
             </div>
-            <div className="mt-2 text-xs font-semibold text-slate-500">Use variables like {"{name}"}, {"{time}"}, {"{price}"}.</div>
+            <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">Use variables like {"{name}"}, {"{time}"}, {"{price}"}.</div>
           </div>
 
           {templates
@@ -1222,16 +1264,16 @@ export default function MessagesPage({
             .map((tpl) => (
               <div key={tpl.id} className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
                 <div className="flex items-start gap-3">
-                  <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 text-slate-700">
+                  <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 text-slate-700 dark:text-slate-200">
                     <StickyNote className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <div className="truncate text-sm font-black text-slate-900">{tpl.title}</div>
+                      <div className="truncate text-sm font-black text-slate-900 dark:text-slate-100">{tpl.title}</div>
                       <Badge tone={tpl.category === "Compliance" ? "orange" : "slate"}>{tpl.category}</Badge>
                       {tpl.pinned ? <Badge tone="green">Pinned</Badge> : null}
                     </div>
-                    <div className="mt-2 text-xs font-semibold text-slate-600 whitespace-pre-wrap">{tpl.body}</div>
+                    <div className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{tpl.body}</div>
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -1254,7 +1296,7 @@ export default function MessagesPage({
                       });
                       pushToast({ title: tpl.pinned ? "Unpinned" : "Pinned", message: tpl.title, tone: "default" });
                     }}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <Star className="h-4 w-4" />
                     {tpl.pinned ? "Unpin" : "Pin"}
@@ -1276,8 +1318,8 @@ export default function MessagesPage({
           <div className="grid gap-4 md:grid-cols-12">
             <div className="md:col-span-8">
               <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-5">
-                <div className="text-sm font-black text-slate-900">Preview</div>
-                <div className="mt-2 text-xs font-semibold text-slate-500">Image/video previews are shown when available; documents open as file cards.</div>
+                <div className="text-sm font-black text-slate-900 dark:text-slate-100">Preview</div>
+                <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">Image/video previews are shown when available; documents open as file cards.</div>
 
                 <div className="mt-4 rounded-3xl border border-slate-200/70 bg-gray-50 dark:bg-slate-950 p-5">
                   {attachmentOpen.type === "image" && attachmentOpen.url ? (
@@ -1286,7 +1328,7 @@ export default function MessagesPage({
                     <video controls src={attachmentOpen.url} className="max-h-[52vh] w-full rounded-2xl" />
                   ) : (
                     <div className="flex items-center gap-3">
-                      <div className="grid h-12 w-12 place-items-center rounded-3xl bg-white dark:bg-slate-900 text-slate-700">
+                      <div className="grid h-12 w-12 place-items-center rounded-3xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">
                         {attachmentOpen.type === "pdf" ? (
                           <FileText className="h-6 w-6" />
                         ) : attachmentOpen.type === "doc" ? (
@@ -1298,17 +1340,17 @@ export default function MessagesPage({
                         )}
                       </div>
                       <div>
-                        <div className="text-sm font-extrabold text-slate-900">{attachmentOpen.name}</div>
-                        <div className="mt-1 text-xs font-semibold text-slate-500">Preview not available for this file type in demo mode.</div>
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">{attachmentOpen.name}</div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Preview not available for this file type in demo mode.</div>
                       </div>
                     </div>
                   )}
                   {attachmentOpen.caption ? (
-                    <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                    <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
                       Caption: {attachmentOpen.caption}
                     </div>
                   ) : null}
-                  <div className="mt-3 text-xs font-semibold text-slate-500">
+                  <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
                     {attachmentOpen.mimeType ? `MIME type: ${attachmentOpen.mimeType}` : "MIME type unavailable"}
                   </div>
                 </div>
@@ -1317,7 +1359,7 @@ export default function MessagesPage({
 
             <div className="md:col-span-4">
               <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-5">
-                <div className="text-sm font-black text-slate-900">Actions</div>
+                <div className="text-sm font-black text-slate-900 dark:text-slate-100">Actions</div>
                 <div className="mt-3 grid gap-2">
                   <button
                     type="button"
@@ -1334,7 +1376,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => pushToast({ title: "Link copied", message: "Wire clipboard copy in your app.", tone: "default" })}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <Link2 className="h-4 w-4" />
                     Copy link
@@ -1342,7 +1384,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => setAttachmentOpen(null)}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100"
                   >
                     <Check className="h-4 w-4" />
                     Done
@@ -1428,42 +1470,42 @@ function ConvertWizard({
       <div className="lg:col-span-8">
         <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-5">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-slate-700" />
-            <div className="text-sm font-black text-slate-900">Details</div>
+            <Sparkles className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+            <div className="text-sm font-black text-slate-900 dark:text-slate-100">Details</div>
             <span className="ml-auto"><Badge tone={mode === "proposal" ? "orange" : "green"}>Premium</Badge></span>
           </div>
 
           <div className="mt-4 grid gap-3">
-            <label className="text-xs font-extrabold text-slate-600">Title</label>
+            <label className="text-xs font-extrabold text-slate-600 dark:text-slate-300">Title</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+              className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-slate-300"
             />
 
-            <label className="text-xs font-extrabold text-slate-600">Summary</label>
+            <label className="text-xs font-extrabold text-slate-600 dark:text-slate-300">Summary</label>
             <textarea
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
               rows={5}
-              className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+              className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-slate-300"
             />
 
             <div className="grid gap-3 md:grid-cols-3">
               <div>
-                <label className="text-xs font-extrabold text-slate-600">Price</label>
+                <label className="text-xs font-extrabold text-slate-600 dark:text-slate-300">Price</label>
                 <input
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  className="mt-1 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+                  className="mt-1 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-slate-300"
                 />
               </div>
               <div>
-                <label className="text-xs font-extrabold text-slate-600">Currency</label>
+                <label className="text-xs font-extrabold text-slate-600 dark:text-slate-300">Currency</label>
                 <select
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
-                  className="mt-1 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800"
+                  className="mt-1 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 dark:text-slate-100"
                 >
                   <option value="USD">USD</option>
                   <option value="EUR">EUR</option>
@@ -1473,32 +1515,32 @@ function ConvertWizard({
                 </select>
               </div>
               <div>
-                <label className="text-xs font-extrabold text-slate-600">Target date</label>
+                <label className="text-xs font-extrabold text-slate-600 dark:text-slate-300">Target date</label>
                 <input
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="mt-1 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800"
+                  className="mt-1 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 dark:text-slate-100"
                 />
               </div>
             </div>
 
-            <label className="text-xs font-extrabold text-slate-600">Terms</label>
+            <label className="text-xs font-extrabold text-slate-600 dark:text-slate-300">Terms</label>
             <textarea
               value={terms}
               onChange={(e) => setTerms(e.target.value)}
               rows={3}
-              className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-slate-300"
+              className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-slate-300"
             />
           </div>
         </div>
 
         <div className="mt-4 rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-5">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-slate-700" />
-            <div className="text-sm font-black text-slate-900">Trust and audit</div>
+            <ShieldCheck className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+            <div className="text-sm font-black text-slate-900 dark:text-slate-100">Trust and audit</div>
           </div>
-          <div className="mt-2 text-xs font-semibold text-slate-500">
+          <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
             The conversion will create an audit entry, link attachments, and keep negotiation history.
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1512,8 +1554,8 @@ function ConvertWizard({
       <div className="lg:col-span-4">
         <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-5">
           <div className="flex items-center gap-2">
-            <Briefcase className="h-4 w-4 text-slate-700" />
-            <div className="text-sm font-black text-slate-900">Actions</div>
+            <Briefcase className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+            <div className="text-sm font-black text-slate-900 dark:text-slate-100">Actions</div>
           </div>
           <div className="mt-4 grid gap-2">
             <button
@@ -1544,7 +1586,7 @@ function ConvertWizard({
                 downloadText(`convert_${mode}_${Date.now()}.json`, JSON.stringify(payload, null, 2));
                 onToast({ title: "Evidence exported", message: "Conversion details downloaded.", tone: "default" });
               }}
-              className="inline-flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800"
+              className="inline-flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 dark:text-slate-100"
             >
               <span className="flex items-center gap-3">
                 <FileText className="h-5 w-5" />
@@ -1556,7 +1598,7 @@ function ConvertWizard({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800"
+              className="inline-flex items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-left text-sm font-extrabold text-slate-800 dark:text-slate-100"
             >
               <span className="flex items-center gap-3">
                 <X className="h-5 w-5" />
@@ -1568,10 +1610,10 @@ function ConvertWizard({
 
           <div className="mt-4 rounded-3xl border border-slate-200/70 bg-gray-50 dark:bg-slate-950 p-4">
             <div className="flex items-center gap-2">
-              <Timer className="h-4 w-4 text-slate-700" />
-              <div className="text-sm font-extrabold text-slate-900">SLA impact</div>
+              <Timer className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+              <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">SLA impact</div>
             </div>
-            <div className="mt-2 text-xs font-semibold text-slate-600">
+            <div className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
               Reply speed and quality can improve your ranking and trust score.
             </div>
           </div>

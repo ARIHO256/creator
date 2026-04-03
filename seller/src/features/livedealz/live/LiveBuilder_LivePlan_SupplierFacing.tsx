@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import { CircularProgress } from "@mui/material";
 import {
   AlertTriangle,
@@ -150,9 +151,10 @@ function mockValidateSchedule(
   startTime: string,
   endISO: string,
   endTime: string,
+  campaignsList: Campaign[] = [],
 ) {
   if (!campaignId) return { ok: false, error: "No campaign selected" };
-  const campaign = campaignsSeed.find((c) => c.id === campaignId);
+  const campaign = campaignsList.find((c) => c.id === campaignId);
   if (!campaign) return { ok: false, error: "Invalid campaign selected" };
 
   const start = new Date(startISO + "T" + startTime);
@@ -717,8 +719,10 @@ export type SupplierCustomGiveawayPreset = {
 
 export type Supplier = {
   id: string;
+  ownerUserId?: string;
   name: string;
   kind: "Seller" | "Provider";
+  handle?: string;
   avatarUrl?: string;
   verified?: boolean;
   rating?: number;
@@ -730,11 +734,16 @@ export type Campaign = {
   name: string;
   startsAtISO: string;
   endsAtISO: string;
+  creatorUsage?: string;
+  collabMode?: string;
+  approvalMode?: string;
+  metadata?: Record<string, unknown>;
 };
 export type Host = {
   id: string;
   name: string;
   handle: string;
+  role?: "Supplier" | "Creator";
   avatarUrl?: string;
   verified?: boolean;
   niche?: string;
@@ -926,9 +935,10 @@ function deriveSupplierHost(supplier: Supplier): Host {
       .slice(0, 18) || supplier.id;
 
   return {
-    id: `host_${supplier.id}`,
+    id: supplier.ownerUserId || supplier.id,
     name: supplier.name,
-    handle: `@${base}`,
+    handle: supplier.handle || `@${base}`,
+    role: "Supplier",
     avatarUrl: supplier.avatarUrl,
     verified: supplier.verified,
     niche:
@@ -1045,131 +1055,6 @@ function getFeaturedItemRowKey(itemId: string, idx: number) {
   return `${itemId}__${idx}`;
 }
 
-/* --------------------------------- Seed data ------------------------------ */
-
-// const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-const SAMPLE_VIDEO_2 =
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4";
-
-const suppliersSeed: Supplier[] = [
-  {
-    id: "pt_glowup",
-    name: "GlowUp Hub",
-    kind: "Seller",
-    verified: true,
-    rating: 4.8,
-    responseTime: "Typically replies within 25 min",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?auto=format&fit=crop&w=120&q=60",
-  },
-  {
-    id: "pt_gadget",
-    name: "GadgetMart Africa",
-    kind: "Seller",
-    verified: true,
-    rating: 4.6,
-    responseTime: "Typically replies within 40 min",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1520975682031-a6ad56ae0f68?auto=format&fit=crop&w=120&q=60",
-  },
-  {
-    id: "pt_grace",
-    name: "Grace Living Studio",
-    kind: "Provider",
-    verified: true,
-    rating: 4.9,
-    responseTime: "Typically replies within 1 hr",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=120&q=60",
-  },
-];
-
-const campaignsSeed: Campaign[] = [
-  {
-    id: "cp_autumn_beauty",
-    supplierId: "pt_glowup",
-    name: "Autumn Beauty Flash",
-    startsAtISO: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "cp_tech_friday",
-    supplierId: "pt_gadget",
-    name: "Tech Friday Mega",
-    startsAtISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "cp_wellness",
-    supplierId: "pt_grace",
-    name: "Wellness Booking Sprint",
-    startsAtISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
-  },
-];
-
-const supplierCustomGiveawayPresetsSeed: Record<
-  string,
-  SupplierCustomGiveawayPreset[]
-> = {
-  cp_autumn_beauty: [
-    {
-      id: "sgw_beauty_kit",
-      campaignId: "cp_autumn_beauty",
-      title: "GlowUp Night Routine Kit",
-      imageUrl: `https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-      notes: "Supplier-set custom giveaway for top-engagement moments.",
-      quantity: 6,
-      totalQuantity: 6,
-      availableQuantity: 3,
-    },
-    {
-      id: "sgw_vanity_pouch",
-      campaignId: "cp_autumn_beauty",
-      title: "Premium Vanity Pouch",
-      imageUrl: `https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-      notes: "Gift pouch supplied for live winners.",
-      quantity: 10,
-      totalQuantity: 10,
-      availableQuantity: 5,
-    },
-  ],
-  cp_tech_friday: [
-    {
-      id: "sgw_ring_light",
-      campaignId: "cp_tech_friday",
-      title: "Creator Ring Light Kit",
-      imageUrl: `https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-      notes: "Supplier-approved creator kit giveaway.",
-      quantity: 6,
-      totalQuantity: 6,
-      availableQuantity: 2,
-    },
-    {
-      id: "sgw_gift_card",
-      campaignId: "cp_tech_friday",
-      title: "Tech Friday Gift Card",
-      imageUrl: `https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-      notes: "Digital voucher for live-session winners.",
-      quantity: 8,
-      totalQuantity: 8,
-      availableQuantity: 4,
-    },
-  ],
-  cp_wellness: [
-    {
-      id: "sgw_consult_credit",
-      campaignId: "cp_wellness",
-      title: "Wellness Consultation Credit",
-      imageUrl: `https://images.unsplash.com/photo-1515378791036-0648a814c963?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-      notes: "Supplier-set service credit for booked attendees.",
-      quantity: 5,
-      totalQuantity: 5,
-      availableQuantity: 3,
-    },
-  ],
-};
-
 function normalizeSupplierCustomGiveawayPresets(
   rawGiveaways: any[],
   campaignId?: string,
@@ -1216,232 +1101,6 @@ function normalizeSupplierCustomGiveawayPresets(
     .filter((g) => g.title.length > 0);
 }
 
-const hostsSeed: Host[] = [
-  {
-    id: "cr_1",
-    name: "Jane Doe",
-    handle: "@janedoe",
-    niche: "Live host • dealz",
-    followers: "128k",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1544006659-f0b21884ce1d?auto=format&fit=crop&w=256&q=60",
-    verified: true,
-  },
-  {
-    id: "cr_2",
-    name: "Noah K.",
-    handle: "@noahknows",
-    niche: "Tech • gadgets",
-    followers: "680k",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=60",
-    verified: true,
-  },
-  {
-    id: "cr_3",
-    name: "Rina Vale",
-    handle: "@rinavale",
-    niche: "Services • wellness",
-    followers: "220k",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=256&q=60",
-    verified: false,
-  },
-];
-
-const assetsSeed: LiveAsset[] = [
-  {
-    id: "as_opener_1",
-    name: "Autumn Beauty opener sequence",
-    type: "Opener",
-    owner: "Seller",
-    tags: ["Beauty", "Opener", "Flash"],
-    lastUpdatedLabel: "2 days ago",
-    previewUrl:
-      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=60",
-    previewKind: "image",
-    usageNotes:
-      "Intro bumper for Beauty Flash lives. Include for all serum-focused shows.",
-    restrictions: "Use only for GlowUp campaigns.",
-  },
-  {
-    id: "as_lower_1",
-    name: "Deal ticker lower third",
-    type: "Lower third",
-    owner: "Platform",
-    tags: ["Ticker", "Dealz", "Lower third"],
-    lastUpdatedLabel: "1 week ago",
-    previewUrl:
-      "https://images.unsplash.com/photo-1557682250-33bd709cbe85?auto=format&fit=crop&w=1200&q=60",
-    previewKind: "image",
-    usageNotes: "Shows countdown + pinned item price.",
-    restrictions: "Keep within safe area for mobile.",
-  },
-  {
-    id: "as_overlay_1",
-    name: "Universal price-drop overlay",
-    type: "Overlay",
-    owner: "Host",
-    tags: ["Overlay", "Price drop"],
-    lastUpdatedLabel: "3 days ago",
-    previewUrl:
-      "https://images.unsplash.com/photo-1518441902117-f0a80e5b0c17?auto=format&fit=crop&w=1200&q=60",
-    previewKind: "image",
-    usageNotes: "Use when dropping price or offering limited-time bonus.",
-    restrictions: "Avoid restricted terms.",
-  },
-  {
-    id: "as_script_1",
-    name: "Host base script — Flash format",
-    type: "Script",
-    owner: "Host",
-    tags: ["Template", "Script", "Flash"],
-    lastUpdatedLabel: "Today",
-    previewUrl:
-      "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=1200&q=60",
-    previewKind: "image",
-    usageNotes: "Includes opener, proof, CTA, objections, closing.",
-    restrictions: "Keep claims compliant.",
-  },
-  {
-    id: "as_opener_2",
-    name: "Tech Friday live opener",
-    type: "Opener",
-    owner: "Seller",
-    tags: ["Tech", "Opener"],
-    lastUpdatedLabel: "Yesterday",
-    previewUrl: SAMPLE_VIDEO_2,
-    previewKind: "video",
-    usageNotes: "Fast paced opener for electronics lives.",
-    restrictions: "Avoid copyrighted music unless cleared.",
-  },
-];
-
-const catalogSeed: LiveItem[] = [
-  {
-    id: "it_powerbank",
-    campaignId: "cp_tech_friday",
-    kind: "product",
-    name: "VoltMax Pro - 30,000mAh",
-    imageUrl: `https://images.unsplash.com/photo-1557180295-76eee20ae8aa?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "Live-only 25% off",
-    stock: 12,
-    retailPricePreview: "$59 → $44",
-    wholesalePricePreview: "$41 → $44",
-    wholesaleMoq: 10,
-    giveawayTotalQuantity: 12,
-    giveawayAvailableQuantity: 7,
-    url: "https://mylivedealz.com/deal/p1",
-  },
-  {
-    id: "it_earbuds",
-    campaignId: "cp_tech_friday",
-    kind: "product",
-    name: "Auralink TWS Buds (ANC)",
-    imageUrl: `https://images.unsplash.com/photo-1518443854922-108a0e71c8bf?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "Bundle & Save",
-    stock: 0,
-    retailPricePreview: "$79 → $55",
-    wholesalePricePreview: "$49 → $52",
-    wholesaleMoq: 20,
-    giveawayTotalQuantity: 5,
-    giveawayAvailableQuantity: 1,
-    url: "https://mylivedealz.com/deal/p2",
-  },
-  {
-    id: "it_cam",
-    campaignId: "cp_tech_friday",
-    kind: "product",
-    name: "SnapCam 4K Action - Creator Kit",
-    imageUrl: `https://images.unsplash.com/photo-1489769002049-ccd828976a6c?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "Limited Stock",
-    stock: 7,
-    retailPricePreview: "$219 → $169",
-    wholesalePricePreview: "$149 → $165",
-    wholesaleMoq: 5,
-    giveawayTotalQuantity: 8,
-    giveawayAvailableQuantity: 3,
-    url: "https://mylivedealz.com/deal/p3",
-  },
-  {
-    id: "it_adapter",
-    campaignId: "cp_tech_friday",
-    kind: "product",
-    name: "Smart Travel Adapter - 65W",
-    imageUrl: `https://images.unsplash.com/photo-1582582421114-80f5a72ad1c8?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "Hot pick",
-    stock: 34,
-    retailPricePreview: "$29 → $19",
-    wholesalePricePreview: "$14 → $17",
-    wholesaleMoq: 50,
-    giveawayTotalQuantity: 10,
-    giveawayAvailableQuantity: 0,
-    url: "https://mylivedealz.com/deal/p4",
-  },
-
-  // Beauty
-  {
-    id: "it_serum",
-    campaignId: "cp_autumn_beauty",
-    kind: "product",
-    name: "GlowUp Vitamin C Serum",
-    imageUrl: `https://images.unsplash.com/photo-1586953208448-b95a79798f07?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "Flash deal",
-    stock: 42,
-    retailPricePreview: "£19 → £14",
-    wholesalePricePreview: "£11 → £13",
-    wholesaleMoq: 12,
-    giveawayTotalQuantity: 9,
-    giveawayAvailableQuantity: 4,
-  },
-  {
-    id: "it_cleanser",
-    campaignId: "cp_autumn_beauty",
-    kind: "product",
-    name: "Barrier Repair Cleanser",
-    imageUrl: `https://images.unsplash.com/photo-1585386959984-a41552231693?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "2‑pack",
-    stock: 18,
-    retailPricePreview: "£14 → £11",
-    wholesalePricePreview: "£8 → £10",
-    wholesaleMoq: 20,
-    giveawayTotalQuantity: 7,
-    giveawayAvailableQuantity: 5,
-  },
-
-  // Wellness services
-  {
-    id: "it_consult",
-    campaignId: "cp_wellness",
-    kind: "service",
-    name: "Live Consultation - Gadget Setup",
-    imageUrl: `https://images.unsplash.com/photo-1553877522-43269d4ea984?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "Limited slots",
-    startingFrom: "$15",
-    durationMins: 20,
-    serviceMode: "online",
-    bookingType: "request",
-    providerName: "VoltMall Tech Team",
-    giveawayTotalQuantity: 5,
-    giveawayAvailableQuantity: 2,
-  },
-  {
-    id: "it_repair",
-    campaignId: "cp_wellness",
-    kind: "service",
-    name: "On‑site Device Repair Quote",
-    imageUrl: `https://images.unsplash.com/photo-1581091215367-59ab6b4d99a7?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-    badge: "Needs assessment",
-    startingFrom: "$0",
-    durationMins: 0,
-    serviceMode: "on-site",
-    bookingType: "quote",
-    providerName: "VoltMall Repairs",
-    giveawayTotalQuantity: 4,
-    giveawayAvailableQuantity: 1,
-  },
-];
-
 function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
   const now = new Date();
   const startDateISO = toISODate(now);
@@ -1461,8 +1120,8 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     tags: ["Live Demo", "Q&A", "Bundles", "Limited stock"],
     status: "Draft",
 
-    supplierId: "pt_gadget",
-    campaignId: "cp_tech_friday",
+    supplierId: undefined,
+    campaignId: undefined,
     hostId: SUPPLIER_SELF_HOST_ID,
 
     platforms: ["TikTok Live", "Instagram Live"],
@@ -1489,9 +1148,7 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     endDateISO,
     endTime,
 
-    products: catalogSeed
-      .filter((it) => it.campaignId === "cp_tech_friday")
-      .slice(0, 4),
+    products: [],
 
     giveaways: [],
 
@@ -1562,6 +1219,264 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
       restrictedTermsCheck: true,
       musicRightsConfirmed: false,
     },
+  };
+}
+
+function readWorkspaceRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readWorkspaceArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function readWorkspaceString(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeWorkspaceSupplier(entry: unknown, index: number): Supplier {
+  const supplier = readWorkspaceRecord(entry);
+  const id = readWorkspaceString(supplier.id, `supplier_${index + 1}`);
+  const ownerUserId = readWorkspaceString(supplier.ownerUserId);
+  const name = readWorkspaceString(supplier.name, "Supplier");
+  const handleRaw = readWorkspaceString(supplier.handle);
+  const fallbackHandle = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return {
+    id,
+    ownerUserId: ownerUserId || undefined,
+    name,
+    kind: readWorkspaceString(supplier.kind, "Seller") === "Provider" ? "Provider" : "Seller",
+    handle: handleRaw
+      ? handleRaw.startsWith("@")
+        ? handleRaw
+        : `@${handleRaw}`
+      : fallbackHandle
+        ? `@${fallbackHandle}`
+        : undefined,
+    avatarUrl: readWorkspaceString(supplier.avatarUrl),
+  };
+}
+
+function normalizeWorkspaceCampaign(entry: unknown, index: number): Campaign {
+  const campaign = readWorkspaceRecord(entry);
+  const metadata = readWorkspaceRecord(campaign.metadata);
+  const now = Date.now();
+  return {
+    id: readWorkspaceString(campaign.id, `campaign_${index + 1}`),
+    supplierId: readWorkspaceString(campaign.supplierId),
+    name: readWorkspaceString(campaign.name, `Campaign ${index + 1}`),
+    startsAtISO: readWorkspaceString(campaign.startsAtISO, new Date(now - 60 * 60 * 1000).toISOString()),
+    endsAtISO: readWorkspaceString(campaign.endsAtISO, new Date(now + 24 * 60 * 60 * 1000).toISOString()),
+    creatorUsage: readWorkspaceString(campaign.creatorUsage, "I will use a Creator"),
+    collabMode: readWorkspaceString(campaign.collabMode, "Open for Collabs"),
+    approvalMode: readWorkspaceString(campaign.approvalMode, "Manual"),
+    metadata,
+  };
+}
+
+function normalizeWorkspaceHost(entry: unknown, index: number): Host {
+  const host = readWorkspaceRecord(entry);
+  const handleRaw = readWorkspaceString(host.handle, "host");
+  const normalizedRole = readWorkspaceString(host.role, "Creator");
+  return {
+    id: readWorkspaceString(host.id, `host_${index + 1}`),
+    name: readWorkspaceString(host.name, "Host"),
+    handle: handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`,
+    role: normalizedRole === "Supplier" ? "Supplier" : "Creator",
+    avatarUrl: readWorkspaceString(host.avatarUrl),
+  };
+}
+
+function normalizeCreatorHost(entry: unknown): Host | null {
+  const creator = readWorkspaceRecord(entry);
+  const profile = readWorkspaceRecord(creator.profile);
+  const id = readWorkspaceString(creator.id || creator.userId || creator.profileId);
+  if (!id) return null;
+  const handleRaw = readWorkspaceString(creator.handle || profile.handle, id);
+  return {
+    id,
+    name: readWorkspaceString(creator.name || profile.name, "Creator"),
+    handle: handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`,
+    role: "Creator",
+    avatarUrl: readWorkspaceString(creator.avatarUrl || creator.photoUrl || profile.avatarUrl),
+  };
+}
+
+function mergeWorkspaceHosts(
+  suppliers: Supplier[],
+  workspaceHosts: Host[],
+  creatorRows: unknown[],
+): Host[] {
+  const merged: Host[] = [];
+  const seen = new Set<string>();
+  const add = (host: Host | null | undefined) => {
+    if (!host?.id || seen.has(host.id)) return;
+    seen.add(host.id);
+    merged.push(host);
+  };
+  workspaceHosts.forEach((host) => add(host));
+  suppliers.forEach((supplier) => add(deriveSupplierHost(supplier)));
+  creatorRows.map((entry) => normalizeCreatorHost(entry)).forEach((host) => add(host || undefined));
+  return merged;
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mapWorkspaceListingToLiveItem(record: unknown): LiveItem | null {
+  const listing = readWorkspaceRecord(record);
+  const metadata = readWorkspaceRecord(listing.metadata);
+  const id = readWorkspaceString(listing.id);
+  if (!id) return null;
+
+  const kindRaw = readWorkspaceString(listing.kind, "product").toLowerCase();
+  const kind: "product" | "service" = kindRaw === "service" ? "service" : "product";
+  const currency = readWorkspaceString(listing.currency, "$");
+  const priceNumeric = toNumberOrNull(listing.price);
+  const inventoryCount = toNumberOrNull(listing.inventoryCount);
+  const title = readWorkspaceString(listing.title, "Listing");
+  const poster =
+    readWorkspaceString(metadata.imageUrl) ||
+    readWorkspaceString(metadata.thumbnailUrl) ||
+    readWorkspaceString(listing.thumbnailUrl) ||
+    readWorkspaceString(listing.imageUrl);
+  const videoUrl = readWorkspaceString(metadata.videoUrl) || readWorkspaceString(listing.videoUrl);
+  const campaignId =
+    readWorkspaceString(metadata.campaignId) ||
+    readWorkspaceString(metadata.linkedCampaignId) ||
+    readWorkspaceString(listing.campaignId);
+
+  const base: LiveItem = {
+    id,
+    campaignId: campaignId || undefined,
+    kind,
+    name: title,
+    imageUrl:
+      poster ||
+      `https://images.unsplash.com/photo-1487014679447-9f8336841d58?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
+    videoUrl: videoUrl || undefined,
+    badge: readWorkspaceString(metadata.badge),
+    url: readWorkspaceString(metadata.url) || readWorkspaceString(listing.url),
+  };
+
+  if (kind === "service") {
+    return {
+      ...base,
+      startingFrom: priceNumeric !== null ? `${currency}${priceNumeric.toLocaleString()}` : undefined,
+      durationMins: toNumberOrNull(metadata.durationMins) || undefined,
+      bookingType: (readWorkspaceString(metadata.bookingType, "request") as "instant" | "request" | "quote"),
+      serviceMode: (readWorkspaceString(metadata.serviceMode, "online") as "online" | "on-site"),
+      providerName: readWorkspaceString(metadata.providerName),
+      goalMetric: getDefaultGoalMetric("service"),
+      goalTarget: toNumberOrNull(metadata.goalTarget) || 10,
+    };
+  }
+
+  const retailPreview =
+    readWorkspaceString(metadata.retailPricePreview) ||
+    (priceNumeric !== null ? `${currency}${priceNumeric.toLocaleString()}` : "");
+  const wholesalePreview =
+    readWorkspaceString(metadata.wholesalePricePreview) ||
+    (priceNumeric !== null ? `${currency}${priceNumeric.toLocaleString()}` : "");
+  return {
+    ...base,
+    stock: inventoryCount !== null ? Math.max(0, Math.floor(inventoryCount)) : undefined,
+    retailPricePreview: retailPreview || undefined,
+    wholesalePricePreview: wholesalePreview || undefined,
+    wholesaleMoq: toNumberOrNull(metadata.wholesaleMoq) || undefined,
+    price: priceNumeric ?? undefined,
+    currency: currency || undefined,
+    goalMetric: getDefaultGoalMetric("product"),
+    goalTarget: toNumberOrNull(metadata.goalTarget) || 10,
+  };
+}
+
+function mapMediaAssetToLiveAsset(record: unknown, index = 0): LiveAsset | null {
+  const asset = readWorkspaceRecord(record);
+  const metadata = readWorkspaceRecord(asset.metadata);
+  const id = readWorkspaceString(asset.id, `asset_${index + 1}`);
+  if (!id) return null;
+
+  const kind = readWorkspaceString(asset.kind || metadata.kind, "image").toLowerCase();
+  let type: LiveAssetType = "Overlay";
+  if (kind.includes("video")) type = "Opener";
+  else if (kind.includes("script")) type = "Script";
+  else if (kind.includes("template")) type = "Template";
+  else if (kind.includes("image")) type = "Overlay";
+
+  const updatedLabel = relativeTimeFromIso(readWorkspaceString(asset.updatedAt || asset.createdAt));
+  const previewUrl =
+    readWorkspaceString(asset.url) ||
+    (asset.id ? `/api/media/assets/${encodeURIComponent(id)}/content` : "");
+  const mimeType = readWorkspaceString(asset.mimeType || metadata.mimeType).toLowerCase();
+  return {
+    id,
+    name: readWorkspaceString(asset.name, `Asset ${index + 1}`),
+    type,
+    owner: "Seller",
+    tags: readWorkspaceArray(asset.tags || metadata.tags).map((entry) => String(entry)).filter(Boolean),
+    lastUpdatedLabel: updatedLabel,
+    previewUrl,
+    previewKind: mimeType.startsWith("video/") || type === "Opener" ? "video" : "image",
+    usageNotes: readWorkspaceString(metadata.usageNotes),
+    restrictions: readWorkspaceString(metadata.restrictions),
+  };
+}
+
+function relativeTimeFromIso(value: string) {
+  if (!value) return "Recently updated";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Recently updated";
+  const diff = Date.now() - parsed.getTime();
+  if (diff < 60_000) return "Just now";
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function buildSessionProjectionFromDraft(draft: LiveSessionDraft) {
+  const startISO = combineDateTime(draft.startDateISO, draft.startTime);
+  const endISO = combineDateTime(draft.endDateISO, draft.endTime);
+  const hostRole = draft.hostId === SUPPLIER_SELF_HOST_ID ? "Supplier" : "Creator";
+  const resolvedHostId =
+    draft.hostId === SUPPLIER_SELF_HOST_ID ? draft.supplierId || "" : draft.hostId || "";
+  const platforms = Array.from(
+    new Set(
+      (draft.platforms || [])
+        .map((platform) =>
+          platform === "Other"
+            ? (draft.platformOther || "").trim() || "Other"
+            : platform,
+        )
+        .filter(Boolean),
+    ),
+  );
+
+  return {
+    title: draft.title,
+    supplierId: draft.supplierId || "",
+    campaignId: draft.campaignId || null,
+    hostId: resolvedHostId,
+    hostRole,
+    platforms,
+    heroImageUrl: draft.heroImageUrl,
+    heroVideoUrl: draft.heroVideoUrl || "",
+    desktopMode: draft.desktopMode,
+    startISO,
+    endISO,
+    location: draft.locationLabel || "MyLiveDealz",
+    status: draft.status,
+    fullBuilderDraft: draft,
   };
 }
 
@@ -2228,6 +2143,7 @@ function Drawer({
   subtitle,
   width = "",
   zIndex,
+  instantOpen = false,
   children,
 }: {
   open: boolean;
@@ -2236,6 +2152,7 @@ function Drawer({
   subtitle?: string;
   width?: string;
   zIndex?: number;
+  instantOpen?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -2267,10 +2184,14 @@ function Drawer({
             onClick={onClose}
           />
           <motion.div
-            initial={{ x: "100%" }}
+            initial={instantOpen ? false : { x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            transition={
+              instantOpen
+                ? { duration: 0.01 }
+                : { type: "spring", damping: 25, stiffness: 200 }
+            }
             className="absolute inset-0 bg-slate-50 dark:bg-slate-950 shadow-2xl transition-colors flex flex-col"
           >
             <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors shrink-0">
@@ -4443,10 +4364,12 @@ function PollBuilderDrawer({
 export function LiveBuilderView({
   initialSessionId,
   prefillDealId,
+  skipSavedDraftHydration = false,
   _onRequestClose,
 }: {
   initialSessionId?: string;
   prefillDealId?: string;
+  skipSavedDraftHydration?: boolean;
   _onRequestClose?: () => void;
 }) {
   const { showSuccess, showError, showNotification } = useNotification();
@@ -4459,6 +4382,15 @@ export function LiveBuilderView({
   );
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [step, setStep] = useState<StepKey>("setup");
+  const backendHydrationDoneRef = useRef<boolean>(!initialSessionId);
+  const backendAutoSaveTimerRef = useRef<number | null>(null);
+  const lastBackendPersistSignatureRef = useRef<string>("");
+  const [workspaceSuppliers, setWorkspaceSuppliers] = useState<Supplier[]>([]);
+  const [workspaceCampaigns, setWorkspaceCampaigns] = useState<Campaign[]>([]);
+  const [workspaceHosts, setWorkspaceHosts] = useState<Host[]>([]);
+  const [workspaceCatalog, setWorkspaceCatalog] = useState<LiveItem[]>([]);
+  const [workspaceAssets, setWorkspaceAssets] = useState<LiveAsset[]>([]);
+  const [workspaceLiveSessions, setWorkspaceLiveSessions] = useState<Array<Record<string, unknown>>>([]);
 
   // Supplier plan tier gates max live duration (Bronze/Silver/Gold).
   // This is kept flexible so the Supplier App can later wire an account-plan context into the same builder.
@@ -4507,6 +4439,89 @@ export function LiveBuilderView({
     ];
     return base;
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadWorkspaceOptions = async () => {
+      try {
+        await sellerBackendApi.ensureWorkspaceRole();
+        const creatorsPromise = sellerBackendApi.getAllCreators().catch(() => []);
+        const liveWorkspacePromise = sellerBackendApi.getLiveDashboardWorkspace();
+        const campaignWorkspacePromise = sellerBackendApi.getCampaignWorkspace().catch(() => ({}));
+        const sellerListingsPromise = sellerBackendApi.getSellerWorkspaceListings().catch(() => []);
+        const mediaAssetsPromise = sellerBackendApi.getMediaAssets().catch(() => []);
+        const liveSessionsPromise = sellerBackendApi.getLiveSessions().catch(() => []);
+        const workspace = await liveWorkspacePromise;
+        const creators = await creatorsPromise;
+        const campaignWorkspace = await campaignWorkspacePromise;
+        const sellerListings = await sellerListingsPromise;
+        const mediaAssets = await mediaAssetsPromise;
+        const liveSessions = await liveSessionsPromise;
+        if (cancelled) return;
+
+        const raw = readWorkspaceRecord(workspace);
+        const suppliers = readWorkspaceArray(raw.suppliers).map((entry, index) =>
+          normalizeWorkspaceSupplier(entry, index),
+        );
+        const campaigns = readWorkspaceArray(raw.campaigns).map((entry, index) =>
+          normalizeWorkspaceCampaign(entry, index),
+        );
+        const hosts = readWorkspaceArray(raw.hosts).map((entry, index) =>
+          normalizeWorkspaceHost(entry, index),
+        );
+        const mergedHosts = mergeWorkspaceHosts(
+          suppliers,
+          hosts,
+          Array.isArray(creators) ? creators : [],
+        );
+
+        setWorkspaceSuppliers(suppliers);
+        setWorkspaceCampaigns(campaigns);
+        setWorkspaceHosts(mergedHosts);
+
+        const mappedListings = readWorkspaceArray(sellerListings)
+          .map((entry) => mapWorkspaceListingToLiveItem(entry))
+          .filter(Boolean) as LiveItem[];
+        const workspaceCatalogItems = readWorkspaceArray(
+          readWorkspaceRecord(campaignWorkspace).catalogItems,
+        )
+          .map((entry) => mapWorkspaceListingToLiveItem(entry))
+          .filter(Boolean) as LiveItem[];
+        const mergedCatalog = [...mappedListings];
+        const catalogSeen = new Set(mappedListings.map((item) => item.id));
+        workspaceCatalogItems.forEach((item) => {
+          if (!catalogSeen.has(item.id)) {
+            catalogSeen.add(item.id);
+            mergedCatalog.push(item);
+          }
+        });
+        setWorkspaceCatalog(mergedCatalog);
+
+        const mappedAssets = readWorkspaceArray(mediaAssets)
+          .map((entry, index) => mapMediaAssetToLiveAsset(entry, index))
+          .filter(Boolean) as LiveAsset[];
+        setWorkspaceAssets(mappedAssets);
+        setWorkspaceLiveSessions(
+          readWorkspaceArray(liveSessions)
+            .map((entry) => readWorkspaceRecord(entry))
+            .filter((entry) => Object.keys(entry).length > 0),
+        );
+      } catch (error) {
+        if (cancelled) return;
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Failed to load backend workspace options.";
+        showNotification(message);
+      }
+    };
+
+    void loadWorkspaceOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [showNotification]);
 
   function isValidTimeZone(tz: string) {
     try {
@@ -4686,9 +4701,13 @@ export function LiveBuilderView({
   const supplierCustomGiveawayPresets = useMemo<
     SupplierCustomGiveawayPreset[]
   >(() => {
-    const seeded = draft.campaignId
-      ? supplierCustomGiveawayPresetsSeed[draft.campaignId] || []
-      : [];
+    const campaignForGiveaways = campaignOptions.find(
+      (entry) => entry.id === draft.campaignId,
+    );
+    const seeded = normalizeSupplierCustomGiveawayPresets(
+      readWorkspaceArray(campaignForGiveaways?.metadata?.giveaways),
+      draft.campaignId,
+    );
     if (typeof window === "undefined") return seeded;
 
     try {
@@ -4721,7 +4740,7 @@ export function LiveBuilderView({
     } catch {
       return seeded;
     }
-  }, [draft.campaignId]);
+  }, [draft.campaignId, campaignOptions]);
 
   const selectedCustomGiveawayPreset = useMemo(
     () =>
@@ -4943,56 +4962,100 @@ export function LiveBuilderView({
     customGiveawayRemainingQty,
   ]);
 
+  const supplierOptions = useMemo(
+    () => workspaceSuppliers,
+    [workspaceSuppliers],
+  );
+  const campaignOptions = useMemo(
+    () => workspaceCampaigns,
+    [workspaceCampaigns],
+  );
+  const creatorHostOptions = useMemo(() => {
+    const hosts =
+      workspaceHosts.length
+        ? workspaceHosts.filter((entry) => entry.role !== "Supplier")
+        : [];
+    return hosts;
+  }, [workspaceHosts]);
+
+  const catalogItems = useMemo(() => workspaceCatalog, [workspaceCatalog]);
+  const assetItems = useMemo(() => workspaceAssets, [workspaceAssets]);
+
   const supplier = useMemo(
-    () => suppliersSeed.find((p) => p.id === draft.supplierId),
-    [draft.supplierId],
+    () => supplierOptions.find((p) => p.id === draft.supplierId),
+    [supplierOptions, draft.supplierId],
   );
   const campaigns = useMemo(
-    () => campaignsSeed.filter((c) => c.supplierId === draft.supplierId),
-    [draft.supplierId],
+    () => campaignOptions.filter((c) => c.supplierId === draft.supplierId),
+    [campaignOptions, draft.supplierId],
   );
   const campaign = useMemo(
-    () => campaignsSeed.find((c) => c.id === draft.campaignId),
-    [draft.campaignId],
+    () => campaignOptions.find((c) => c.id === draft.campaignId),
+    [campaignOptions, draft.campaignId],
   );
   const host = useMemo(() => {
     if (supplier && (!draft.hostId || draft.hostId === SUPPLIER_SELF_HOST_ID)) {
       return deriveSupplierHost(supplier);
     }
-    return hostsSeed.find((h) => h.id === draft.hostId);
-  }, [draft.hostId, supplier]);
+    return creatorHostOptions.find((h) => h.id === draft.hostId);
+  }, [draft.hostId, supplier, creatorHostOptions]);
+
+  useEffect(() => {
+    if (!supplierOptions.length) return;
+    setDraft((current) => {
+      const selectedSupplier = supplierOptions.find((entry) => entry.id === current.supplierId);
+      if (selectedSupplier) return current;
+      const fallbackSupplier = supplierOptions[0];
+      const fallbackCampaign = campaignOptions.find(
+        (entry) => entry.supplierId === fallbackSupplier.id,
+      );
+      return {
+        ...current,
+        supplierId: fallbackSupplier.id,
+        campaignId: fallbackCampaign?.id,
+        hostId: SUPPLIER_SELF_HOST_ID,
+      };
+    });
+  }, [supplierOptions, campaignOptions]);
+
+  useEffect(() => {
+    if (!draft.campaignId || !campaign) return;
+    if (campaign.creatorUsage === "I will NOT use a Creator" && draft.hostId !== SUPPLIER_SELF_HOST_ID) {
+      setDraft((current) => ({ ...current, hostId: SUPPLIER_SELF_HOST_ID }));
+    }
+  }, [campaign, draft.campaignId, draft.hostId]);
 
   const openerAsset = useMemo(
     () =>
       draft.creatives.openerAssetId
         ? externalAssets[draft.creatives.openerAssetId] ||
-          assetsSeed.find((a) => a.id === draft.creatives.openerAssetId)
+          assetItems.find((a) => a.id === draft.creatives.openerAssetId)
         : undefined,
-    [draft.creatives.openerAssetId, externalAssets],
+    [draft.creatives.openerAssetId, externalAssets, assetItems],
   );
   const lowerThirdAsset = useMemo(
     () =>
       draft.creatives.lowerThirdAssetId
         ? externalAssets[draft.creatives.lowerThirdAssetId] ||
-          assetsSeed.find((a) => a.id === draft.creatives.lowerThirdAssetId)
+          assetItems.find((a) => a.id === draft.creatives.lowerThirdAssetId)
         : undefined,
-    [draft.creatives.lowerThirdAssetId, externalAssets],
+    [draft.creatives.lowerThirdAssetId, externalAssets, assetItems],
   );
   const overlayAssets = useMemo(
     () =>
       draft.creatives.overlayAssetIds
-        .map((id) => externalAssets[id] || assetsSeed.find((a) => a.id === id))
+        .map((id) => externalAssets[id] || assetItems.find((a) => a.id === id))
         .filter(Boolean) as LiveAsset[],
-    [draft.creatives.overlayAssetIds, externalAssets],
+    [draft.creatives.overlayAssetIds, externalAssets, assetItems],
   );
 
   const allAssets = useMemo(() => {
     const map = new Map<string, LiveAsset>();
-    [...assetsSeed, ...Object.values(externalAssets)].forEach((a) =>
+    [...assetItems, ...Object.values(externalAssets)].forEach((a) =>
       map.set(a.id, a),
     );
     return Array.from(map.values());
-  }, [externalAssets]);
+  }, [externalAssets, assetItems]);
 
   const startISO = useMemo(
     () => combineDateTime(draft.startDateISO, draft.startTime),
@@ -5029,6 +5092,7 @@ export function LiveBuilderView({
       draft.startTime,
       draft.endDateISO,
       draft.endTime,
+      campaignOptions,
     ).ok;
   const complianceOk =
     Boolean(
@@ -5191,6 +5255,24 @@ export function LiveBuilderView({
     [persistDraftForPicker, buildReturnToUrl, prefillDealId, draft.id],
   );
 
+  const openCreativeAssetLibraryPicker = useCallback(
+    (applyTo?: string) => {
+      if (typeof window === "undefined") return;
+      persistDraftForPicker();
+      const returnTo = buildReturnToUrl();
+
+      const picker = new URL(ROUTES.assetLibrary, window.location.origin);
+      picker.searchParams.set("mode", "picker");
+      picker.searchParams.set("target", "live");
+      picker.searchParams.set("dealId", prefillDealId || draft.id);
+      if (applyTo) picker.searchParams.set("applyTo", applyTo);
+      picker.searchParams.set("returnTo", returnTo);
+      picker.searchParams.set("entry", "creative_editor");
+      window.location.assign(picker.toString());
+    },
+    [persistDraftForPicker, buildReturnToUrl, prefillDealId, draft.id],
+  );
+
   const coerceOwner = useCallback(
     (label?: string): "Host" | "Seller" | "Platform" => {
       const t = (label || "").toLowerCase();
@@ -5343,11 +5425,24 @@ export function LiveBuilderView({
     [activeFeaturedItemId],
   );
 
-  const crewOk = useMemo(() => {
-    // Mock logic: Sarah A. (mod_1) has a conflict
-    const allCrew = [...draft.team.moderators, ...draft.team.cohosts];
-    return !allCrew.some((m) => m.id === "mod_1");
+  const duplicateCrewIds = useMemo(() => {
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    [...draft.team.moderators, ...draft.team.cohosts].forEach((member) => {
+      const id = String(member?.id || "").trim();
+      if (!id) return;
+      if (seen.has(id)) {
+        duplicates.add(id);
+      } else {
+        seen.add(id);
+      }
+    });
+    return duplicates;
   }, [draft.team.moderators, draft.team.cohosts]);
+
+  const crewOk = useMemo(() => {
+    return duplicateCrewIds.size === 0;
+  }, [duplicateCrewIds]);
 
 
   const editingPoll = useMemo(
@@ -5527,7 +5622,9 @@ export function LiveBuilderView({
     if (typeof window === "undefined") return;
 
     const sp = new URLSearchParams(window.location.search);
-    const shouldRestore = sp.get("restore") === "1" || sp.has("assetId");
+    const shouldRestore =
+      !skipSavedDraftHydration &&
+      (sp.get("restore") === "1" || sp.has("assetId"));
 
     const stepParam = sp.get("step");
     if (stepParam && STEPS.some((s) => s.key === stepParam)) {
@@ -5535,6 +5632,7 @@ export function LiveBuilderView({
     }
 
     const readSaved = () => {
+      if (skipSavedDraftHydration) return null;
       try {
         const raw = shouldRestore
           ? sessionStorage.getItem(LIVE_DRAFT_KEY) ||
@@ -5591,7 +5689,11 @@ export function LiveBuilderView({
         });
       }
 
-      if (saved?.step && STEPS.some((s) => s.key === saved.step)) {
+      if (
+        !skipSavedDraftHydration &&
+        saved?.step &&
+        STEPS.some((s) => s.key === saved.step)
+      ) {
         setStep(saved.step as StepKey);
       }
       if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
@@ -5673,7 +5775,133 @@ export function LiveBuilderView({
         clean.pathname + (qs ? `?${qs}` : ""),
       );
     }
-  }, [applyPickedAssetToDraft, toLiveAsset, initialSessionId, showError]);
+  }, [
+    applyPickedAssetToDraft,
+    toLiveAsset,
+    initialSessionId,
+    showError,
+    skipSavedDraftHydration,
+  ]);
+
+  useEffect(() => {
+    if (!initialSessionId) return;
+    let cancelled = false;
+
+    const hydrateFromBackend = async () => {
+      try {
+        const builder = await sellerBackendApi.getLiveBuilder(initialSessionId);
+        if (cancelled) return;
+        const data = readWorkspaceRecord((builder as Record<string, unknown>)?.data);
+        const restored = readWorkspaceRecord(data.draft);
+        if (!Object.keys(restored).length) return;
+
+        const rawGiveaways = Array.isArray((restored as any).giveaways)
+          ? ((restored as any).giveaways as any[])
+          : [];
+        const normalizedGiveaways: LiveGiveaway[] = rawGiveaways.map(
+          (g: any, idx: number) => ({
+            id: typeof g?.id === "string" && g.id ? g.id : `gw_${idx}`,
+            linkedItemId:
+              typeof g?.linkedItemId === "string" ? g.linkedItemId : undefined,
+            title: typeof g?.title === "string" ? g.title : undefined,
+            imageUrl: typeof g?.imageUrl === "string" ? g.imageUrl : undefined,
+            notes: typeof g?.notes === "string" ? g.notes : undefined,
+            showOnPromo:
+              typeof g?.showOnPromo === "boolean" ? g.showOnPromo : true,
+            quantity:
+              typeof g?.quantity === "number" && g.quantity > 0
+                ? Math.floor(g.quantity)
+                : 1,
+          }),
+        );
+
+        setDraft((prev) => ({
+          ...prev,
+          ...(restored as Partial<LiveSessionDraft>),
+          id: initialSessionId,
+          giveaways: normalizedGiveaways,
+          teleprompterScript:
+            typeof (restored as any).teleprompterScript === "string"
+              ? (restored as any).teleprompterScript
+              : "",
+          livePlanPolls: normalizeLivePlanPolls((restored as any).livePlanPolls),
+          runOfShow: normalizeRunOfShow((restored as any).runOfShow),
+        }));
+
+        if (
+          typeof data.step === "string" &&
+          STEPS.some((entry) => entry.key === data.step)
+        ) {
+          setStep(data.step as StepKey);
+        }
+        if (data.externalAssets && typeof data.externalAssets === "object") {
+          setExternalAssets(data.externalAssets as Record<string, LiveAsset>);
+        }
+      } catch {
+        // keep local fallback behavior
+      } finally {
+        if (!cancelled) {
+          backendHydrationDoneRef.current = true;
+        }
+      }
+    };
+
+    void hydrateFromBackend();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialSessionId]);
+
+  useEffect(() => {
+    if (!initialSessionId) return;
+    if (draft.supplierId || draft.campaignId || draft.hostId !== SUPPLIER_SELF_HOST_ID) return;
+
+    const fromWorkspace = workspaceLiveSessions.find((entry) => {
+      const id = readWorkspaceString(entry.id);
+      return id === initialSessionId;
+    });
+    if (!fromWorkspace) return;
+
+    const data = readWorkspaceRecord(fromWorkspace.data);
+    const supplierId = readWorkspaceString(data.supplierId || fromWorkspace.supplierId);
+    const campaignId = readWorkspaceString(data.campaignId || fromWorkspace.campaignId);
+    const hostId = readWorkspaceString(data.hostId || fromWorkspace.hostId);
+    const title = readWorkspaceString(data.title || fromWorkspace.title, draft.title);
+    const platforms = readWorkspaceArray(data.platforms).map((entry) => readWorkspaceString(entry)).filter(Boolean);
+    const startISO = readWorkspaceString(data.startISO || fromWorkspace.scheduledAt);
+    const endISO = readWorkspaceString(data.endISO);
+    const desktopModeRaw = readWorkspaceString(data.desktopMode);
+    const desktopMode = desktopModeRaw === "fullscreen" ? "fullscreen" : "modal";
+
+    setDraft((prev) => ({
+      ...prev,
+      title: title || prev.title,
+      supplierId: supplierId || prev.supplierId,
+      campaignId: campaignId || prev.campaignId,
+      hostId: hostId || prev.hostId,
+      platforms: platforms.length ? platforms : prev.platforms,
+      desktopMode,
+      ...(startISO
+        ? {
+            startDateISO: startISO.slice(0, 10),
+            startTime: startISO.slice(11, 16) || prev.startTime,
+          }
+        : {}),
+      ...(endISO
+        ? {
+            endDateISO: endISO.slice(0, 10),
+            endTime: endISO.slice(11, 16) || prev.endTime,
+          }
+        : {}),
+    }));
+  }, [
+    initialSessionId,
+    workspaceLiveSessions,
+    draft.supplierId,
+    draft.campaignId,
+    draft.hostId,
+    draft.title,
+  ]);
 
   const canPublish =
     setupOk &&
@@ -5683,6 +5911,159 @@ export function LiveBuilderView({
     scheduleOk &&
     complianceOk &&
     crewOk;
+
+  const quickAnalytics = useMemo(() => {
+    const rows = workspaceLiveSessions
+      .map((entry) => {
+        const data = readWorkspaceRecord(entry.data);
+        const peak =
+          toNumberOrNull(data.peakViewers) ??
+          toNumberOrNull(entry.peakViewers) ??
+          0;
+        const conversion =
+          toNumberOrNull(data.conversionRate) ??
+          toNumberOrNull(data.projectedConversion) ??
+          toNumberOrNull(entry.conversionRate) ??
+          0;
+        return { peak, conversion };
+      })
+      .filter((entry) => entry.peak > 0 || entry.conversion > 0);
+
+    if (!rows.length) {
+      return {
+        peakLabel: "—",
+        conversionLabel: "—",
+        peakHint: "No historical live session data yet.",
+        conversionHint: "Conversion appears after real session telemetry is recorded.",
+      };
+    }
+
+    const avgPeak = Math.round(rows.reduce((sum, row) => sum + row.peak, 0) / rows.length);
+    const avgConversion = rows.reduce((sum, row) => sum + row.conversion, 0) / rows.length;
+
+    return {
+      peakLabel: `${(avgPeak / 1000).toFixed(1)}k`,
+      conversionLabel: `${avgConversion.toFixed(1)}%`,
+      peakHint: `Based on ${rows.length} recorded session${rows.length === 1 ? "" : "s"} in backend.`,
+      conversionHint: "Derived from recorded session telemetry.",
+    };
+  }, [workspaceLiveSessions]);
+
+  const buildBuilderSavePayload = useCallback(
+    (status: "draft" | "published", nextDraft?: LiveSessionDraft) => {
+      const targetDraft = nextDraft || draft;
+      const projection = buildSessionProjectionFromDraft(targetDraft);
+      return {
+        sessionId: targetDraft.id,
+        status,
+        step,
+        draft: targetDraft,
+        externalAssets,
+        activeFeaturedItemId,
+        activeFeaturedItemKey,
+        liveStudioHandoff,
+        giveawayUi: {
+          giveawayPanelOpen,
+          giveawayAddMode,
+          giveawayLinkedItemId,
+          giveawayQuantity,
+          customGiveaway,
+        },
+        session: projection,
+      };
+    },
+    [
+      draft,
+      step,
+      externalAssets,
+      activeFeaturedItemId,
+      activeFeaturedItemKey,
+      liveStudioHandoff,
+      giveawayPanelOpen,
+      giveawayAddMode,
+      giveawayLinkedItemId,
+      giveawayQuantity,
+      customGiveaway,
+    ],
+  );
+
+  const saveDraftToBackend = async () => {
+    persistDraftForPicker();
+    const payload = buildBuilderSavePayload("draft");
+    await sellerBackendApi.saveLiveBuilder(payload);
+    lastBackendPersistSignatureRef.current = JSON.stringify(payload);
+  };
+
+  const submitDraftToBackend = async () => {
+    persistDraftForPicker();
+    const readyDraft: LiveSessionDraft = { ...draft, status: "Ready" };
+    const projection = buildSessionProjectionFromDraft(readyDraft);
+    const payload = buildBuilderSavePayload("published", readyDraft);
+
+    await sellerBackendApi.saveLiveBuilder(payload);
+    lastBackendPersistSignatureRef.current = JSON.stringify(payload);
+
+    const liveSessionBody = {
+      id: draft.id,
+      title: readyDraft.title,
+      status: "scheduled",
+      scheduledAt: projection.startISO,
+      data: {
+        ...projection,
+        workflowStatus: "ready_for_approval",
+      },
+    };
+
+    const patched = await sellerBackendApi.patchLiveSession(draft.id, liveSessionBody).catch(() => null);
+    if (!patched) {
+      await sellerBackendApi.createLiveSession(liveSessionBody);
+    }
+
+    setDraft((current) => ({ ...current, status: "Ready" }));
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!backendHydrationDoneRef.current) return;
+    if (
+      initialSessionId &&
+      !draft.supplierId &&
+      !draft.campaignId &&
+      draft.hostId === SUPPLIER_SELF_HOST_ID
+    ) {
+      return;
+    }
+
+    const payload = buildBuilderSavePayload("draft");
+    const signature = JSON.stringify(payload);
+    if (signature === lastBackendPersistSignatureRef.current) return;
+
+    if (backendAutoSaveTimerRef.current !== null) {
+      window.clearTimeout(backendAutoSaveTimerRef.current);
+    }
+
+    backendAutoSaveTimerRef.current = window.setTimeout(async () => {
+      try {
+        await sellerBackendApi.saveLiveBuilder(payload);
+        lastBackendPersistSignatureRef.current = signature;
+      } catch {
+        // Keep the current UI interactive even if autosave fails temporarily.
+      }
+    }, 900);
+
+    return () => {
+      if (backendAutoSaveTimerRef.current !== null) {
+        window.clearTimeout(backendAutoSaveTimerRef.current);
+        backendAutoSaveTimerRef.current = null;
+      }
+    };
+  }, [
+    buildBuilderSavePayload,
+    initialSessionId,
+    draft.supplierId,
+    draft.campaignId,
+    draft.hostId,
+  ]);
 
   const currentIndex = STEPS.findIndex((s) => s.key === step);
   const isFirstStep = currentIndex === 0;
@@ -5798,7 +6179,7 @@ export function LiveBuilderView({
   };
 
   const addCatalogSelected = () => {
-    const picked = catalogSeed.filter((it) => catalogSelected.includes(it.id));
+    const picked = catalogItems.filter((it) => catalogSelected.includes(it.id));
     setDraft((d) => {
       const existingIds = new Set(d.products.map((x) => x.id));
       const merged = [
@@ -5864,9 +6245,10 @@ export function LiveBuilderView({
           <SoftButton
             onClick={() =>
               run(async () => {
-                persistDraftForPicker();
+                await saveDraftToBackend();
               }, {
                 successMessage: "Draft saved successfully!",
+                errorMessage: "Failed to save draft.",
               })
             }
             disabled={isPending}
@@ -5885,11 +6267,12 @@ export function LiveBuilderView({
             onClick={() =>
               run(
                 async () => {
-                  setDraft((d) => ({ ...d, status: "Ready" }));
+                  await submitDraftToBackend();
                 },
                 {
                   successMessage: "Live session submitted for approval.",
-                  delay: 1500,
+                  errorMessage: "Failed to submit live session.",
+                  delay: 0,
                 },
               )
             }
@@ -5918,7 +6301,7 @@ export function LiveBuilderView({
               Quick analytics (preview)
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              Historical baselines + projections for supplier-hosted or creator-hosted sessions (demo).
+              Historical baselines + projections for supplier-hosted or creator-hosted sessions.
             </div>
             <div className="mt-3 space-y-2">
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 transition-colors min-h-[82px]">
@@ -5926,10 +6309,10 @@ export function LiveBuilderView({
                   Expected peak viewers
                 </div>
                 <div className="text-[18px] font-semibold mt-1 text-slate-900 dark:text-slate-100">
-                  12.4k
+                  {quickAnalytics.peakLabel}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Based on supplier/creator host mode + platform mix.
+                  {quickAnalytics.peakHint}
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 transition-colors min-h-[82px]">
@@ -5937,10 +6320,10 @@ export function LiveBuilderView({
                   Projected conversion
                 </div>
                 <div className="text-[18px] font-semibold mt-1 text-slate-900 dark:text-slate-100">
-                  2.6%
+                  {quickAnalytics.conversionLabel}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Pinned cadence + featured item quality.
+                  {quickAnalytics.conversionHint}
                 </div>
               </div>
             </div>
@@ -5971,7 +6354,7 @@ export function LiveBuilderView({
                       }))
                     }
                   >
-                    {suppliersSeed.map((p) => (
+                    {supplierOptions.map((p) => (
                       <option
                         key={p.id}
                         value={p.id}
@@ -6040,7 +6423,7 @@ export function LiveBuilderView({
                                 ? SUPPLIER_SELF_HOST_ID
                                 : d.hostId && d.hostId !== SUPPLIER_SELF_HOST_ID
                                   ? d.hostId
-                                  : hostsSeed[0]?.id,
+                                  : creatorHostOptions[0]?.id,
                           }))
                         }
                       />
@@ -6081,8 +6464,13 @@ export function LiveBuilderView({
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
                           Choose the creator host assigned to this supplier campaign.
                         </div>
+                        {!creatorHostOptions.length ? (
+                          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3 text-[12px] text-slate-600 dark:text-slate-300">
+                            No creator hosts found in backend yet.
+                          </div>
+                        ) : null}
                         <div className="grid sm:grid-cols-3 gap-2">
-                          {hostsSeed.map((h) => (
+                          {creatorHostOptions.map((h) => (
                             <button
                               key={h.id}
                               type="button"
@@ -6109,7 +6497,8 @@ export function LiveBuilderView({
                                   ) : null}
                                 </div>
                                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                                  {h.handle} • {h.followers}
+                                  {h.handle}
+                                  {h.followers ? ` • ${h.followers}` : ""}
                                 </div>
                               </div>
                             </button>
@@ -6342,11 +6731,18 @@ export function LiveBuilderView({
                         placeholder="https://..."
                       />
                     </div>
-                    <SoftButton
-                      onClick={() => openAssetLibraryPicker("promoHeroImage")}
-                    >
-                      <ImageIcon className="h-4 w-4" /> Pick hero image
-                    </SoftButton>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <SoftButton
+                        onClick={() => openAssetLibraryPicker("promoHeroImage")}
+                      >
+                        <ImageIcon className="h-4 w-4" /> Pick from Asset Library
+                      </SoftButton>
+                      <SoftButton
+                        onClick={() => openAssetLibraryPicker("promoHeroImage")}
+                      >
+                        <Sparkles className="h-4 w-4" /> Creative hero image
+                      </SoftButton>
+                    </div>
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 transition-colors">
                     Required hero size: {HERO_IMAGE_REQUIRED.width}×
@@ -6449,11 +6845,11 @@ export function LiveBuilderView({
                             ) : null}
                           </div>
                           <div className="min-w-0 flex-1 basis-[220px]">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                              <div className="text-[12px] font-semibold truncate text-slate-900 dark:text-slate-100">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                              <div className="min-w-0 text-[12px] font-semibold truncate text-slate-900 dark:text-slate-100">
                                 {it.name}
                               </div>
-                              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                              <div className="flex flex-wrap items-start gap-2 sm:ml-auto sm:justify-end">
                                 <Pill
                                   text={
                                     it.kind === "product"
@@ -6462,36 +6858,84 @@ export function LiveBuilderView({
                                   }
                                 />
                                 {isActiveItem ? <Pill text="Active" /> : null}
+                                <div className="flex flex-col gap-1">
+                                  <div className="grid grid-cols-[repeat(4,minmax(0,72px))] gap-3 text-[10px] font-bold uppercase tracking-[0.04em] text-slate-600 dark:text-slate-300">
+                                    <span className="text-center leading-[1.1] whitespace-nowrap">
+                                      Set Poster
+                                    </span>
+                                    <span className="text-center leading-[1.1] whitespace-nowrap">
+                                      Create Poster
+                                    </span>
+                                    <span className="text-center leading-[1.1] whitespace-nowrap">
+                                      Set Video
+                                    </span>
+                                    <span className="text-center leading-[1.1] whitespace-nowrap">
+                                      Create Video
+                                    </span>
+                                  </div>
 
-                                <button
-                                  className="h-9 w-9 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 grid place-items-center transition-colors"
-                                  title={`Set item poster (${ITEM_POSTER_REQUIRED.width}×${ITEM_POSTER_REQUIRED.height})`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveFeaturedItemId(it.id);
-                                    setActiveFeaturedItemKey(rowKey);
-                                    openAssetLibraryPicker(
-                                      `itemPoster:${it.id}`,
-                                    );
-                                  }}
-                                >
-                                  <ImageIcon className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-                                </button>
+                                  <div className="grid grid-cols-[repeat(4,minmax(0,72px))] gap-3">
+                                    <button
+                                      className="h-9 w-10 justify-self-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 grid place-items-center transition-colors"
+                                      title={`Set item poster (${ITEM_POSTER_REQUIRED.width}×${ITEM_POSTER_REQUIRED.height})`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveFeaturedItemId(it.id);
+                                        setActiveFeaturedItemKey(rowKey);
+                                        openAssetLibraryPicker(
+                                          `itemPoster:${it.id}`,
+                                        );
+                                      }}
+                                    >
+                                      <ImageIcon className="h-4 w-4 text-slate-700 dark:text-slate-300" />
+                                    </button>
 
-                                <button
-                                  className="h-9 w-9 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 grid place-items-center transition-colors"
-                                  title="Set item video"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveFeaturedItemId(it.id);
-                                    setActiveFeaturedItemKey(rowKey);
-                                    openAssetLibraryPicker(
-                                      `itemVideo:${it.id}`,
-                                    );
-                                  }}
-                                >
-                                  <Film className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-                                </button>
+                                    <button
+                                      className="h-9 w-10 justify-self-center rounded-2xl border border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 grid place-items-center transition-colors"
+                                      title="Create item poster"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveFeaturedItemId(it.id);
+                                        setActiveFeaturedItemKey(rowKey);
+                                        openCreativeAssetLibraryPicker(
+                                          `itemPoster:${it.id}`,
+                                        );
+                                      }}
+                                    >
+                                      <Wand2 className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                                    </button>
+
+                                    <button
+                                      className="h-9 w-10 justify-self-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 grid place-items-center transition-colors"
+                                      title="Set item video"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveFeaturedItemId(it.id);
+                                        setActiveFeaturedItemKey(rowKey);
+                                        openAssetLibraryPicker(
+                                          `itemVideo:${it.id}`,
+                                        );
+                                      }}
+                                    >
+                                      <Film className="h-4 w-4 text-slate-700 dark:text-slate-300" />
+                                    </button>
+
+                                    <button
+                                      className="h-9 w-10 justify-self-center rounded-2xl border border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 grid place-items-center transition-colors"
+                                      title="Create item video"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveFeaturedItemId(it.id);
+                                        setActiveFeaturedItemKey(rowKey);
+                                        openCreativeAssetLibraryPicker(
+                                          `itemVideo:${it.id}`,
+                                        );
+                                      }}
+                                    >
+                                      <Wand2 className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                             </div>
 
@@ -8243,7 +8687,7 @@ export function LiveBuilderView({
                             <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
                               {m.name}
                             </div>
-                            {m.id === "mod_1" && (
+                            {duplicateCrewIds.has(m.id) && (
                               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
                                 <AlertTriangle className="h-3 w-3" /> Conflict
                               </span>
@@ -8309,7 +8753,7 @@ export function LiveBuilderView({
                             <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
                               {c.name}
                             </div>
-                            {c.id === "mod_1" /* sharing key for demo */ && (
+                            {duplicateCrewIds.has(c.id) && (
                               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
                                 <AlertTriangle className="h-3 w-3" /> Conflict
                               </span>
@@ -8754,6 +9198,7 @@ export function LiveBuilderView({
                     draft.startTime,
                     draft.endDateISO,
                     draft.endTime,
+                    campaignOptions,
                   );
                   if (!val.ok) {
                     return (
@@ -8899,15 +9344,19 @@ export function LiveBuilderView({
 
                   <div className="flex items-center gap-2 flex-wrap">
                     <PrimaryButton
-                      disabled={!canPublish}
-                      onClick={() => {
-                        if (canPublish) {
-                          setDraft((d) => ({ ...d, status: "Ready" }));
-                          setToast(
-                            "Success! Your live session was submitted for approval.",
-                          );
-                        }
-                      }}
+                      disabled={!canPublish || isPending}
+                      onClick={() =>
+                        run(
+                          async () => {
+                            await submitDraftToBackend();
+                          },
+                          {
+                            successMessage: "Live session submitted for approval.",
+                            errorMessage: "Failed to submit live session.",
+                            delay: 0,
+                          },
+                        )
+                      }
                     >
                       Submit for Approval <Zap className="h-4 w-4" />
                     </PrimaryButton>
@@ -8981,15 +9430,19 @@ export function LiveBuilderView({
                   </PrimaryButton>
                 ) : (
                   <PrimaryButton
-                    disabled={!canPublish}
-                    onClick={() => {
-                      if (!canPublish) return;
-                      setDraft((d) => ({ ...d, status: "Ready" }));
-                      setToast(
-                        "Success! Your live session was submitted for approval.",
-                      );
-                      
-                    }}
+                    disabled={!canPublish || isPending}
+                    onClick={() =>
+                      run(
+                        async () => {
+                          await submitDraftToBackend();
+                        },
+                        {
+                          successMessage: "Live session submitted for approval.",
+                          errorMessage: "Failed to submit live session.",
+                          delay: 0,
+                        },
+                      )
+                    }
                     className="rounded-2xl px-8 py-2.5 shadow-lg shadow-orange-500/20"
                     title={
                       !canPublish
@@ -9060,7 +9513,7 @@ export function LiveBuilderView({
         open={catalogOpen}
         onClose={() => setCatalogOpen(false)}
         campaignId={draft.campaignId}
-        catalog={catalogSeed}
+        catalog={catalogItems}
         selectedIds={catalogSelected}
         onToggle={(id) =>
           setCatalogSelected((prev) =>
@@ -9248,12 +9701,14 @@ export function LiveBuilderDrawer({
   onClose,
   sessionId,
   dealId,
+  skipSavedDraftHydration,
   zIndex,
 }: {
   open: boolean;
   onClose: () => void;
   sessionId?: string;
   dealId?: string;
+  skipSavedDraftHydration?: boolean;
   zIndex?: number;
 }) {
   return (
@@ -9261,13 +9716,16 @@ export function LiveBuilderDrawer({
       open={open}
       onClose={onClose}
       zIndex={zIndex}
+      instantOpen
       title="Live Builder"
       subtitle="Create premium Live Sessionz with promo link preview, run-of-show, assets, pins, and simulcast."
       width="w-full"
     >
       <LiveBuilderView
+        key={`${sessionId || "new"}:${dealId || "none"}`}
         initialSessionId={sessionId}
         prefillDealId={dealId}
+        skipSavedDraftHydration={skipSavedDraftHydration}
         _onRequestClose={onClose}
       />
       <div className="mt-4 flex items-center justify-end gap-2">

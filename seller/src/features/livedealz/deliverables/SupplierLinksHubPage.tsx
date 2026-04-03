@@ -1373,14 +1373,12 @@ export default function SupplierLinksHubPage() {
   const [pinnedIds, setPinnedIds] = useState([]);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [items, setItems] = useState([]);
-  const [dataState, setDataState] = useState("loading");
 
   // Review note per link
   const [reviewNotes, setReviewNotes] = useState({});
 
   useEffect(() => {
     let mounted = true;
-    setDataState("loading");
     Promise.all([sellerBackendApi.getCampaigns(), sellerBackendApi.getLiveSessions(), sellerBackendApi.getAdzCampaigns()])
       .then(([campaignRows, liveRows, adzRows]) => {
         if (!mounted) return;
@@ -1396,14 +1394,13 @@ export default function SupplierLinksHubPage() {
         setItems(allItems);
         setPinnedIds(allItems.slice(0, 2).map((item) => item.id));
         setSelectedId((prev) => (prev && allItems.some((item) => item.id === prev) ? prev : allItems[0]?.id || null));
-        setDataState("ready");
       })
       .catch(() => {
         if (!mounted) return;
         setItems([]);
         setPinnedIds([]);
         setSelectedId(null);
-        setDataState("error");
+        toast("Unable to load links right now.");
       });
     return () => {
       mounted = false;
@@ -1537,11 +1534,6 @@ export default function SupplierLinksHubPage() {
       />
 
       <main className="w-full px-[0.55%] py-3 md:py-6">
-        {dataState === "error" ? (
-          <section className="mb-4 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
-            Unable to load links from the database right now.
-          </section>
-        ) : null}
         <section className="bg-white dark:bg-slate-900 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-3 md:p-4 transition-colors">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
             <div>

@@ -1477,7 +1477,6 @@ export default function SupplierCampaignsBoardPage() {
   });
 
   const [campaigns, setCampaigns] = useState([]);
-  const [dataState, setDataState] = useState("loading");
 
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -1506,17 +1505,15 @@ export default function SupplierCampaignsBoardPage() {
 
   useEffect(() => {
     let mounted = true;
-    setDataState("loading");
     loadCampaignsBoard()
       .then(() => {
         if (!mounted) return;
-        setDataState("ready");
       })
       .catch(() => {
         if (!mounted) return;
         setCampaigns([]);
         setSelectedCampaign(null);
-        setDataState("error");
+        toast("Unable to load campaigns right now.");
       });
     return () => {
       mounted = false;
@@ -1890,11 +1887,6 @@ export default function SupplierCampaignsBoardPage() {
 
           <div className="flex-1 overflow-auto">
             <div className="min-w-[1100px]">
-              {dataState === "error" ? (
-                <div className="mx-4 md:mx-6 mt-4 rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
-                  Unable to load campaigns from the database.
-                </div>
-              ) : null}
               <div className="px-4 md:px-6 py-3 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <div className="grid grid-cols-6 gap-2">
                   <div>Campaign</div>
@@ -1924,7 +1916,7 @@ export default function SupplierCampaignsBoardPage() {
                   {filteredCampaigns.length === 0 ? (
                     <tr>
                       <td className="px-6 py-14 text-center text-sm text-slate-500" colSpan={6}>
-                        {dataState === "loading" ? "Loading campaigns…" : "No campaigns match your filters."}
+                        No campaigns match your filters.
                       </td>
                     </tr>
                   ) : null}

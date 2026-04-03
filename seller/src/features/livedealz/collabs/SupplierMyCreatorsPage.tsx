@@ -1136,7 +1136,6 @@ export default function SupplierMyCreatorsPreviewCanvas() {
   const navigate = useNavigate();
   const [creators, setCreators] = useState([]);
   const [supplierCampaigns, setSupplierCampaigns] = useState([]);
-  const [dataState, setDataState] = useState("loading");
   const [search, setSearch] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState("All");
   const [viewTab, setViewTab] = useState("all");
@@ -1153,7 +1152,6 @@ export default function SupplierMyCreatorsPreviewCanvas() {
 
   useEffect(() => {
     let mounted = true;
-    setDataState("loading");
     Promise.all([sellerBackendApi.getMyCreatorsWorkspace(), sellerBackendApi.getCampaigns()])
       .then(([workspace, campaigns]) => {
         if (!mounted) return;
@@ -1166,7 +1164,6 @@ export default function SupplierMyCreatorsPreviewCanvas() {
           if (prev && nextCreators.some((creator) => creator.id === prev.id)) return prev;
           return nextCreators[0] || null;
         });
-        setDataState("ready");
       })
       .catch(() => {
         if (!mounted) return;
@@ -1174,7 +1171,6 @@ export default function SupplierMyCreatorsPreviewCanvas() {
         setSupplierCampaigns([]);
         setSelectedCreatorId(null);
         setProposalRecipient(null);
-        setDataState("error");
       });
     return () => {
       mounted = false;
@@ -1366,11 +1362,6 @@ export default function SupplierMyCreatorsPreviewCanvas() {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-4">
-          {dataState === "error" ? (
-            <section className="rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
-              Unable to load creators from the database.
-            </section>
-          ) : null}
           <section className="bg-white dark:bg-slate-900 rounded-3xl transition-colors shadow-sm p-4 md:p-5 flex flex-col gap-4 text-sm border border-slate-200/80 dark:border-slate-800">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>

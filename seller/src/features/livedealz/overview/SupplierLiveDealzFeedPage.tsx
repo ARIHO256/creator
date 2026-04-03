@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
@@ -796,11 +796,10 @@ function CreatorsDiscoveryCard({ onChangePage }) {
 
 export default function SupplierLiveDealzFeedPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast, showSuccess, showInfo, showWarning, dismiss } = useToast();
 
   const [workspace, setWorkspace] = useState(() => normalizeLiveFeedWorkspace({}));
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
   const pageRouteMap = {
     home: "/mldz/feed",
     "my-campaigns": "/mldz/campaigns",
@@ -837,11 +836,17 @@ export default function SupplierLiveDealzFeedPage() {
     }
   };
 
-  const loadWorkspace = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) {
-      setLoading(true);
-      setLoadError("");
-    }
+  const activePage = useMemo(() => {
+    const normalizedPath = String(location.pathname || "");
+    const directMatch = Object.entries(pageRouteMap).find(([, path]) => normalizedPath === path);
+    if (directMatch) return directMatch[0];
+    const prefixMatch = Object.entries(pageRouteMap).find(([, path]) =>
+      normalizedPath.startsWith(`${path}/`)
+    );
+    return prefixMatch ? prefixMatch[0] : "home";
+  }, [location.pathname]);
+
+  const loadWorkspace = useCallback(async () => {
     try {
       await sellerBackendApi.ensureWorkspaceRole();
       const response = await sellerBackendApi.getLiveFeedWorkspace();
@@ -849,17 +854,9 @@ export default function SupplierLiveDealzFeedPage() {
     } catch (error) {
       const message =
         error instanceof Error && error.message ? error.message : "Failed to load live feed workspace.";
-      if (!silent) {
-        setLoadError(message);
-      } else {
-        throw error;
-      }
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
+      showWarning(message);
     }
-  }, []);
+  }, [showWarning]);
 
   useEffect(() => {
     void loadWorkspace();
@@ -872,7 +869,7 @@ export default function SupplierLiveDealzFeedPage() {
       try {
         await sellerBackendApi.followCreator(creatorId, { follow: false });
         showSuccess("Creator unfollowed");
-        await loadWorkspace({ silent: true });
+        await loadWorkspace();
       } catch {
         showWarning("Could not update the follow list.");
       }
@@ -914,30 +911,6 @@ export default function SupplierLiveDealzFeedPage() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
-        Loading live feed workspace…
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950 p-6">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300 space-y-3">
-          <div>{loadError}</div>
-          <button
-            onClick={() => void loadWorkspace()}
-            className="inline-flex items-center px-4 py-1 rounded-lg bg-[#f77f00] text-white text-sm font-medium hover:bg-[#e26f00]"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors overflow-x-hidden">
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 overflow-y-auto overflow-x-hidden">
@@ -964,7 +937,7 @@ export default function SupplierLiveDealzFeedPage() {
               </span>
             </div>
             <div className="text-xs text-slate-500 dark:text-slate-300">
-              Backend: <span className="font-semibold">/api/dashboard/live-feed</span>
+              Active page: <span className="font-semibold">{activePage}</span>
             </div>
           </div>
 
