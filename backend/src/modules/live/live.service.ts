@@ -24,31 +24,30 @@ export class LiveService {
     const builder = await this.ensureBuilderRecord(userId, sessionKey);
     return this.serializeBuilder(builder);
   }
-  saveBuilder(userId: string, payload: SaveLiveBuilderDto) {
+  async saveBuilder(userId: string, payload: SaveLiveBuilderDto) {
     const sanitized = this.ensureObjectPayload(this.extractPayload(payload));
     const sessionKey = normalizeIdentifier(sanitized.sessionId ?? sanitized.id, randomUUID());
     const status = this.normalizeStatus((sanitized as any).status ?? 'draft', this.builderStatuses(), 'builder');
-    return this.findBuilderRecord(userId, sessionKey)
-      .then((existing) =>
-        existing
-          ? this.prisma.liveBuilder.update({
-              where: { id: existing.id },
-              data: {
-                sessionId: sessionKey,
-                status,
-                data: sanitized as Prisma.InputJsonValue
-              }
-            })
-          : this.prisma.liveBuilder.create({
-              data: {
-                userId,
-                sessionId: sessionKey,
-                status,
-                data: sanitized as Prisma.InputJsonValue
-              }
-            })
-      )
-      .then((builder) => this.serializeBuilder(builder));
+    await this.ensureBuilderSessionRecord(userId, sessionKey);
+    const existing = await this.findBuilderRecord(userId, sessionKey);
+    const builder = existing
+      ? await this.prisma.liveBuilder.update({
+          where: { id: existing.id },
+          data: {
+            sessionId: sessionKey,
+            status,
+            data: sanitized as Prisma.InputJsonValue
+          }
+        })
+      : await this.prisma.liveBuilder.create({
+          data: {
+            userId,
+            sessionId: sessionKey,
+            status,
+            data: sanitized as Prisma.InputJsonValue
+          }
+        });
+    return this.serializeBuilder(builder);
   }
   async publishBuilder(userId: string, id: string, payload: PublishLiveBuilderDto) {
     const sessionKey = normalizeIdentifier(id, randomUUID());
@@ -653,6 +652,8 @@ export class LiveService {
       return existing;
     }
 
+    await this.ensureBuilderSessionRecord(userId, sessionKey);
+
     return this.prisma.liveBuilder.create({
       data: {
         userId,
@@ -665,6 +666,27 @@ export class LiveService {
         } as Prisma.InputJsonValue
       }
     });
+  }
+
+  private async ensureBuilderSessionRecord(userId: string, sessionKey: string) {
+    const existing = await this.prisma.liveSession.findUnique({
+      where: { id: sessionKey },
+      select: { userId: true }
+    });
+    if (!existing) {
+      await this.prisma.liveSession.create({
+        data: {
+          id: sessionKey,
+          userId,
+          status: 'draft',
+          data: { sessionId: sessionKey } as Prisma.InputJsonValue
+        }
+      });
+      return;
+    }
+    if (existing.userId !== userId) {
+      throw new BadRequestException('Invalid builder session reference');
+    }
   }
 
   private serializeBuilder(builder: {

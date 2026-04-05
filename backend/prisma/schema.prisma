@@ -839,6 +839,7 @@ model Campaign {
   tasks       Task[]
   assets      DeliverableAsset[]
   invites     CollaborationInvite[]
+  liveCampaignGiveaways LiveCampaignGiveaway[]
 
   @@index([sellerId])
   @@index([creatorId])
@@ -2680,9 +2681,11 @@ model LiveBuilder {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session LiveSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
+  @@index([sessionId])
 }
 
 model LiveSession {
@@ -2698,6 +2701,7 @@ model LiveSession {
   updatedAt   DateTime @updatedAt
 
   user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  builders LiveBuilder[]
   studio  LiveStudio?
   replay  LiveReplay?
 
@@ -2777,6 +2781,8 @@ model LiveCampaignGiveaway {
   data       Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId, createdAt])
 }
