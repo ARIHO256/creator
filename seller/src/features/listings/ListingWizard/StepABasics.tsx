@@ -49,26 +49,6 @@ const LIGHT_HERO_SURFACE =
   'linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(255, 255, 255, 0.95), rgba(247, 115, 0, 0.16))';
 const LIGHT_CARD_SURFACE = 'linear-gradient(180deg, rgba(255,255,255,0.95), rgba(240,246,255,0.7))';
 
-const IconShell = ({ children }) => (
-  <Box
-    component="span"
-    className="inline-flex items-center justify-center"
-    sx={{ fontSize: '0.9rem', lineHeight: 1 }}
-  >
-    {children}
-  </Box>
-);
-
-const IconChevronRight = ({ className, style }) => (
-  <IconShell>
-    <span className={className} style={style}>
-      ›
-    </span>
-  </IconShell>
-);
-
-const IconSearch = () => <IconShell>🔍</IconShell>;
-
 type TaxonomyNode = ListingTaxonomyNode;
 type LineStatus = 'active' | 'suspended';
 type CatalogLine = {
