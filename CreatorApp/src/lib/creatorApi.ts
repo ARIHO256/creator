@@ -1070,6 +1070,9 @@ export const creatorApi = {
   updateLiveStudio(id: string, body: Record<string, unknown>) {
     return api.patch<LiveStudioRecord>(`/live/studio/${encodeURIComponent(id)}`, body);
   },
+  addLiveStudioMoment(id: string, body: Record<string, unknown>) {
+    return api.post<Record<string, unknown>>(`/live/studio/${encodeURIComponent(id)}/moments`, body);
+  },
   startLiveStudio(id: string) {
     return api.post<Record<string, unknown>>(`/live/studio/${encodeURIComponent(id)}/start`);
   },
@@ -1173,6 +1176,12 @@ export const creatorApi = {
   updatePayoutMethods(body: PayoutMethodsResponse | UpdatePayoutMethodsRequest) {
     return api.patch<PayoutMethodsResponse>("/settings/payout-methods", sanitizePayoutMethodsRequest(body));
   },
+  sendPayoutCode(body: { method?: string; channel?: string; target?: string }) {
+    return api.post<Record<string, unknown>>("/settings/payout/send-code", body);
+  },
+  verifyPayout(body: { code?: string; method?: string; token?: string }) {
+    return api.post<Record<string, unknown>>("/settings/payout/verify", body);
+  },
 
   subscription() {
     return api.get<SubscriptionResponse>("/subscription");
@@ -1217,6 +1226,16 @@ export const creatorApi = {
   },
   resubmitAccountApproval(body: Record<string, unknown>) {
     return api.post<AccountApprovalResponse>("/account-approval/resubmit", body);
+  },
+  createSupportTicket(body: {
+    id?: string;
+    marketplace?: string;
+    category?: string;
+    subject?: string;
+    severity?: string;
+    ref?: string;
+  }) {
+    return api.post<Record<string, unknown>>("/help-support/tickets", body);
   },
 
   reviewsDashboard() {

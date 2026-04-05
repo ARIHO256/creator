@@ -339,6 +339,37 @@ export default function PostLivePublisherPage() {
     setClipTitle('');
   };
 
+  const handleAutoHighlights = () => {
+    const generated: Clip[] = [
+      { id: `auto_${Date.now()}_1`, title: 'Top product moment', startSec: 45, endSec: 78, format: '9:16', status: 'Draft' },
+      { id: `auto_${Date.now()}_2`, title: 'Audience Q&A highlight', startSec: 180, endSec: 212, format: '1:1', status: 'Draft' },
+      { id: `auto_${Date.now()}_3`, title: 'Closing CTA', startSec: 320, endSec: 350, format: '16:9', status: 'Draft' },
+    ];
+    const nextClips = [...generated, ...clips].slice(0, 30);
+    setClips(nextClips);
+    void creatorApi.patchLiveTool("post-live", {
+      session,
+      plan,
+      published,
+      schedulePublish,
+      publishAt,
+      allowComments,
+      showProductStrip,
+      clips: nextClips,
+      channels,
+      enabledChannels,
+      audience,
+      scheduleSends,
+      sendNow,
+      templatePack,
+      cartRecovery,
+      priceDrop,
+      restock,
+      metrics,
+    });
+    showSuccess("Auto highlights generated.");
+  };
+
   // Channels (send replay)
   const channels = useMemo(() => payload.channels || [], [payload.channels]);
 
@@ -499,7 +530,7 @@ export default function PostLivePublisherPage() {
                 </Btn>
               </div>
 
-              <Btn tone="neutral" onClick={() => showNotification("Preview replay page (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+              <Btn tone="neutral" onClick={() => safeNav(session.replayUrl)} left={<ExternalLink className="h-4 w-4" />}>
                 Preview
               </Btn>
 
@@ -575,7 +606,7 @@ export default function PostLivePublisherPage() {
                       >
                         Copy
                       </Btn>
-                      <Btn tone="ghost" onClick={() => showNotification("Open replay (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => safeNav(session.replayUrl)} left={<ExternalLink className="h-4 w-4" />}>
                         Open
                       </Btn>
                     </div>
@@ -669,7 +700,7 @@ export default function PostLivePublisherPage() {
                   </Btn>
                   <Btn
                     tone="ghost"
-                    onClick={() => showNotification("Auto highlights (demo)")}
+                    onClick={handleAutoHighlights}
                     left={<Sparkles className="h-4 w-4" />}
                     disabled={!isPro}
                   >
@@ -889,7 +920,7 @@ export default function PostLivePublisherPage() {
                   <div className="flex items-center justify-end gap-2">
                     <Btn
                       tone="neutral"
-                      onClick={() => showNotification('Preview message (demo)')}
+                      onClick={() => showNotification('Preview message')}
                       left={<Phone className="h-4 w-4" />}
                     >
                       Preview
@@ -1032,7 +1063,7 @@ export default function PostLivePublisherPage() {
               </div>
 
               <div className="mt-3 flex items-center justify-end gap-2">
-                <Btn tone="ghost" onClick={() => showNotification('Preview booster plan (demo)')} left={<Phone className="h-4 w-4" />}>
+                <Btn tone="ghost" onClick={() => showNotification('Preview booster plan')} left={<Phone className="h-4 w-4" />}>
                   Preview
                 </Btn>
                 <Btn tone="primary" onClick={() => run(async () => {

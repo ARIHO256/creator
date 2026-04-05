@@ -186,6 +186,19 @@ function extractLiveDraftFromStoragePayload(payload: unknown): StoredLiveDraft |
   };
 }
 
+function nowLabel() {
+  return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function persistableUrl(value?: string) {
+  if (!value) return undefined;
+  return value.startsWith("blob:") ? undefined : value;
+}
+
+function createLocalId() {
+  return Date.now() + Math.floor(Math.random() * 1000);
+}
+
 
 function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule" | "home") => void }) {
   // const { theme, toggleTheme } = useTheme();
@@ -303,6 +316,45 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
             })
           );
         }
+        if (Array.isArray(data.momentMarkers)) {
+          setMomentMarkers(
+            data.momentMarkers.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                id: Number(row.id || index + 1),
+                time: String(row.time || nowLabel()),
+                label: String(row.label || "Marked highlight")
+              } as MomentMarker;
+            })
+          );
+        }
+        if (typeof data.pinnedMessage === "string" || data.pinnedMessage === null) {
+          setPinnedMessage(typeof data.pinnedMessage === "string" ? data.pinnedMessage : null);
+        }
+        if (typeof data.pollActive === "boolean") setPollActive(data.pollActive);
+        if (typeof data.pollQuestion === "string") setPollQuestion(data.pollQuestion);
+        if (Array.isArray(data.pollResults) && data.pollResults.length >= 2) {
+          setPollResults([
+            Number(data.pollResults[0] || 0),
+            Number(data.pollResults[1] || 0)
+          ]);
+        }
+        if (typeof data.giveawayActive === "boolean") setGiveawayActive(data.giveawayActive);
+        if (typeof data.giveawayEntries === "number") setGiveawayEntries(Math.max(0, Math.round(data.giveawayEntries)));
+        if (data.giveawayRemainingById && typeof data.giveawayRemainingById === "object" && !Array.isArray(data.giveawayRemainingById)) {
+          const normalized: Record<string, number> = {};
+          Object.entries(data.giveawayRemainingById as Record<string, unknown>).forEach(([key, value]) => {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) normalized[key] = Math.max(0, Math.round(parsed));
+          });
+          setGiveawayRemainingById(normalized);
+        }
+        if (typeof data.audienceTab === "string") {
+          const tab = data.audienceTab as AudienceTab;
+          if (tab === "chat" || tab === "qa" || tab === "viewers") {
+            setAudienceTab(tab);
+          }
+        }
         if (studio.status === "live") setMode("live");
       } catch {
         setStudioData({});
@@ -325,10 +377,10 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       showToast(`📦 Imported Smart Bundle: ${bundle.campaign}`);
 
       const sysMsg: ChatMessage = {
-        id: Date.now(),
+        id: createLocalId(),
         from: "System",
         body: `✅ Imported Show Pack: ${bundle.campaign} (${bundle.assets.length} assets ready)`,
-        time: "Now",
+        time: nowLabel(),
         system: true
       };
       setChatMessages(prev => [...prev, sysMsg]);
@@ -405,6 +457,34 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
   useEffect(() => {
     if (!studioHydrated || !studioId) return;
+    const normalizedChatMessages = chatMessages.slice(-250).map((message) => ({
+      id: message.id,
+      from: message.from,
+      body: message.body,
+      time: message.time,
+      system: message.system || false,
+      audioUrl: persistableUrl(message.audioUrl),
+      attachmentUrl: persistableUrl(message.attachmentUrl),
+      attachmentType: message.attachmentType
+    }));
+    const normalizedAttachments = attachments.slice(-200).map((attachment) => ({
+      id: attachment.id,
+      from: attachment.from,
+      type: attachment.type,
+      label: attachment.label,
+      status: attachment.status
+    }));
+    const normalizedCoHosts = coHosts.slice(-40).map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      status: entry.status
+    }));
+    const normalizedMoments = momentMarkers.slice(0, 200).map((entry) => ({
+      id: entry.id,
+      time: entry.time,
+      label: entry.label
+    }));
+
     const timeout = window.setTimeout(() => {
       void creatorApi
         .updateLiveStudio(studioId, {
@@ -419,7 +499,19 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
             flashDealzSeconds,
             giveawayActive,
             giveawayEntries,
-            selectedGiveawayId
+            selectedGiveawayId,
+            giveawayRemainingById,
+            audienceTab,
+            viewerCount,
+            salesCount,
+            coHosts: normalizedCoHosts,
+            attachments: normalizedAttachments,
+            chatMessages: normalizedChatMessages,
+            momentMarkers: normalizedMoments,
+            pinnedMessage,
+            pollActive,
+            pollQuestion,
+            pollResults
           }
         })
         .catch(() => undefined);
@@ -437,10 +529,22 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     highlightedProductId,
     micOn,
     mode,
+    momentMarkers,
+    pinnedMessage,
+    pollActive,
+    pollQuestion,
+    pollResults,
     screenShareOn,
+    salesCount,
     selectedGiveawayId,
+    studioId,
     studioHydrated,
-    studioId
+    viewerCount,
+    attachments,
+    chatMessages,
+    coHosts,
+    audienceTab,
+    giveawayRemainingById
   ]);
 
   // Keep remaining quantities in sync when the configured giveaway list changes.
@@ -531,7 +635,6 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   // File attachment dialog
   const [attachDialogOpen, setAttachDialogOpen] = useState(false);
 
-  // Attachments mock
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const scenes = useMemo<Scene[]>(() => {
@@ -595,9 +698,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     });
   }, [studioData.salesEvents]);
 
-  const momentMarkers: MomentMarker[] = [];
+  const [momentMarkers, setMomentMarkers] = useState<MomentMarker[]>([]);
 
-  // Chat/QA mock
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatDraft, setChatDraft] = useState("");
   const [audienceTab, setAudienceTab] = useState<AudienceTab>("chat");
@@ -657,31 +759,100 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     setFlashDealzSeconds(0);
   };
 
-  const handleApproveAttachment = (id: number) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
-    // In real app, move to active
+  const addSystemMessage = (body: string) => {
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        id: createLocalId(),
+        from: "System",
+        body,
+        time: nowLabel(),
+        system: true,
+      },
+    ]);
   };
+
+  const handleApproveAttachment = (id: number) => {
+    const target = attachments.find((entry) => entry.id === id);
+    if (!target) return;
+    setAttachments((prev) =>
+      prev.map((entry) => {
+        if (entry.id !== id) return entry;
+        return { ...entry, status: "Approved" };
+      })
+    );
+    addSystemMessage(`Approved attachment from ${target.from}: ${target.label}`);
+    showToast("Attachment approved ✅");
+  };
+
   const handleRejectAttachment = (id: number) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    const target = attachments.find((entry) => entry.id === id);
+    if (!target) return;
+    setAttachments((prev) =>
+      prev.map((entry) => {
+        if (entry.id !== id) return entry;
+        return { ...entry, status: "Rejected" };
+      })
+    );
+    addSystemMessage(`Rejected attachment from ${target.from}: ${target.label}`);
+    showToast("Attachment rejected");
   };
 
   const handleMarkMoment = () => {
+    const marker: MomentMarker = {
+      id: createLocalId(),
+      time: mode === "live" ? formatTime(elapsedSeconds) : nowLabel(),
+      label: mode === "live" ? "Marked replay highlight" : "Marked lobby note",
+    };
+    setMomentMarkers((prev) => [...prev, marker].slice(-200));
+    addSystemMessage(`📌 Moment marked: ${marker.label} (${marker.time})`);
     showToast("Moment marked for replay highlight 📌");
+    if (studioHydrated && studioId) {
+      void creatorApi
+        .addLiveStudioMoment(studioId, {
+          kind: "highlight",
+          data: {
+            label: marker.label,
+            time: marker.time,
+            mode,
+            elapsedSeconds,
+          },
+        })
+        .catch(() => undefined);
+    }
   };
 
   const handleInviteCoHost = () => {
+    const inviteName = `Guest ${coHosts.length + 1}`;
+    setCoHosts((prev) => [
+      ...prev,
+      {
+        id: createLocalId(),
+        name: inviteName,
+        status: "Invited",
+      },
+    ]);
+    addSystemMessage(`🔗 Co-host invite created for ${inviteName}`);
     showToast("Invitation link copied to clipboard 🔗");
   };
 
   const handleAcceptCoHost = (name: string) => {
-    setCoHosts(prev => prev.map(c =>
-      c.name === name ? { ...c, status: "On-air 🔴" } : c
-    ));
+    setCoHosts((prev) => {
+      const exists = prev.some((entry) => entry.name === name);
+      if (!exists) {
+        return [...prev, { id: createLocalId(), name, status: "On-air 🔴" }];
+      }
+      return prev.map((entry) =>
+        entry.name === name ? { ...entry, status: "On-air 🔴" } : entry
+      );
+    });
+    addSystemMessage(`${name} is now on air 🔴`);
     showToast(`${name} is now on air 🔴`);
   };
 
   const handleRemoveCoHost = (name: string) => {
-    setCoHosts(prev => prev.filter(c => c.name !== name));
+    setCoHosts((prev) => prev.filter((entry) => entry.name !== name));
+    addSystemMessage(`${name} removed from studio`);
     showToast(`${name} removed from studio`);
   };
 
@@ -705,10 +876,10 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
         const duration = recordingSecondsRef.current; // Read from ref to get actual value
 
         const newMsg: ChatMessage = {
-          id: Date.now(),
+          id: createLocalId(),
           from: "You (Host)",
           body: `🎤 Voice message (${duration}s)`,
-          time: "Now",
+          time: nowLabel(),
           audioUrl: audioUrl,
         };
         setChatMessages(prev => [...prev, newMsg]);
@@ -748,10 +919,10 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     const isVideo = file.type.startsWith("video/");
 
     const newMsg: ChatMessage = {
-      id: Date.now(),
+      id: createLocalId(),
       from: "You (Host)",
       body: isImage ? "📷 Shared a photo" : isVideo ? "🎥 Shared a video" : `📎 Shared ${file.name}`,
-      time: "Now",
+      time: nowLabel(),
       attachmentUrl: fileUrl,
       attachmentType: isImage ? "image" : isVideo ? "video" : "file",
     };
@@ -809,14 +980,14 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     showToast(`🎉 Winner: @${winner}! Congratulations!`);
     // Add system message
     setChatMessages(prev => [...prev, {
-      id: Date.now(),
+      id: createLocalId(),
       from: "System",
       body: `🎉 Giveaway Winner: @${winner}! Prize: ${activePrizeLabel}`,
-      time: "Now",
+      time: nowLabel(),
       system: true,
     }]);
 
-    // Deduct remaining quantity for the active giveaway (UI only; no backend)
+    // Deduct remaining quantity for the active giveaway in local state (autosaved to studio data).
     if (configuredGiveaways.length && activeGiveawayId) {
       const activeGiveaway = configuredGiveaways.find((g) => g.id === activeGiveawayId);
       const totalQty = coercePositiveInt((activeGiveaway as any)?.quantity, 1);
@@ -876,13 +1047,18 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const handleSendChat = () => {
     if (!chatDraft.trim()) return;
     const newMsg: ChatMessage = {
-      id: Date.now(),
+      id: createLocalId(),
       from: "You (Host)",
       body: chatDraft,
-      time: "Now",
+      time: nowLabel(),
     };
     setChatMessages((prev) => [...prev, newMsg]);
     setChatDraft("");
+  };
+
+  const handleAudienceAction = (action: string) => {
+    showToast(action);
+    addSystemMessage(action);
   };
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -1041,7 +1217,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
               draft={chatDraft}
               onDraftChange={setChatDraft}
               onSend={handleSendChat}
-              onAction={(action) => showToast(action)}
+              onAction={handleAudienceAction}
               isRecording={isRecording}
               recordingSeconds={recordingSeconds}
               onStartRecording={handleStartRecording}

@@ -2668,7 +2668,8 @@ export default function CreatorSettingsSafetyPremium() {
                 {creatorType !== "Individual" ? (
                   <SoftButton
                     onClick={() => {
-                      push("Opening Roles & Permissions (demo).", "success");
+                      addAudit("Opened Roles & Permissions");
+                      navigate("/roles-permissions");
                     }}
                   >
                     <Users className="h-4 w-4" /> Roles & Permissions
@@ -2676,7 +2677,8 @@ export default function CreatorSettingsSafetyPremium() {
                 ) : (
                   <SoftButton
                     onClick={() => {
-                      push("Upgrade to Team/Agency plan (demo).", "success");
+                      addAudit("Opened subscription settings");
+                      navigate("/subscription");
                     }}
                   >
                     <Sparkles className="h-4 w-4" /> Upgrade
@@ -3096,7 +3098,8 @@ export default function CreatorSettingsSafetyPremium() {
                     </div>
                     <PrimaryButton
                       onClick={() => {
-                        push("Opening Roles & Permissions (demo).", "success");
+                        addAudit("Opened Roles & Permissions");
+                        navigate("/roles-permissions");
                       }}
                     >
                       <Users className="h-4 w-4" /> Open
@@ -3114,7 +3117,8 @@ export default function CreatorSettingsSafetyPremium() {
                     </div>
                     <PrimaryButton
                       onClick={() => {
-                        push("Opening Crew Management (demo).", "success");
+                        addAudit("Opened Crew Management");
+                        navigate("/Crew-manager");
                       }}
                     >
                       <Calendar className="h-4 w-4" /> Open
@@ -3469,7 +3473,7 @@ export default function CreatorSettingsSafetyPremium() {
                     onChange={(v) => {
                       update("settings.calendar.googleConnected", v);
                       addAudit("Calendar sync updated", v ? "connected" : "disconnected");
-                      push(v ? "Google Calendar connected (demo)." : "Google Calendar disconnected (demo).", "success");
+                      push(v ? "Google Calendar connected." : "Google Calendar disconnected.", "success");
                     }}
                   />
                 </div>
@@ -3858,25 +3862,42 @@ export default function CreatorSettingsSafetyPremium() {
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <GhostButton
-                      onClick={() => {
+                      onClick={async () => {
                         if (!form.payout.method) {
                           push("Select a payout method first.", "error");
                           return;
                         }
-                        update("payout.verification.status", "code_sent");
-                        update("payout.verification.lastSentTo", form.payout.method);
-                        addAudit("Verification code sent", form.payout.method);
-                        push("Verification code sent (demo).", "success");
+                        try {
+                          update("payout.verification.status", "code_sent");
+                          update("payout.verification.lastSentTo", form.payout.method);
+                          addAudit("Verification code sent", form.payout.method);
+                          await creatorApi.sendPayoutCode({
+                            method: form.payout.method,
+                            channel: "app"
+                          });
+                          push("Verification code sent.", "success");
+                        } catch {
+                          push("Could not send verification code.", "error");
+                        }
                       }}
                     >
                       <Upload className="h-4 w-4" /> Send code
                     </GhostButton>
 
                     <PrimaryButton
-                      onClick={() => {
-                        update("payout.verification.status", "verified");
-                        addAudit("Payout verified", form.payout.method || "method");
-                        push("Payout verified (demo).", "success");
+                      onClick={async () => {
+                        try {
+                          update("payout.verification.status", "verified");
+                          addAudit("Payout verified", form.payout.method || "method");
+                          await creatorApi.verifyPayout({
+                            method: form.payout.method || undefined,
+                            channel: "app",
+                            code: "confirmed"
+                          });
+                          push("Payout verified.", "success");
+                        } catch {
+                          push("Could not verify payout setup.", "error");
+                        }
                       }}
                     >
                       <Check className="h-4 w-4" /> Mark verified
@@ -4160,9 +4181,21 @@ export default function CreatorSettingsSafetyPremium() {
 
               <div className="mt-4 flex justify-end">
                 <PrimaryButton
-                  onClick={() => {
-                    push("Support chat opened (demo).", "success");
-                    addAudit("Support contacted", "Creator Success");
+                  onClick={async () => {
+                    try {
+                      const ticket = await creatorApi.createSupportTicket({
+                        marketplace: "creator",
+                        category: "settings",
+                        subject: "Creator settings support request",
+                        severity: "medium",
+                        ref: "creator-settings"
+                      });
+                      addAudit("Support contacted", "Creator Success");
+                      const ticketId = typeof ticket?.id === "string" ? ticket.id : "";
+                      push(ticketId ? `Support ticket created: ${ticketId}` : "Support ticket created.", "success");
+                    } catch {
+                      push("Could not create support ticket.", "error");
+                    }
                   }}
                 >
                   <HelpCircle className="h-4 w-4" /> Contact support

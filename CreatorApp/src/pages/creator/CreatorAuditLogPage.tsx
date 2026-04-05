@@ -23,7 +23,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { useApiResource } from "../../hooks/useApiResource";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
-import { creatorApi, type AuditLogRecord } from "../../lib/creatorApi";
+import { creatorApi, type AuditLogRecord, type WorkspaceRolesResponse } from "../../lib/creatorApi";
 
 /**
  * Creator Platform – Audit Log (Premium)
@@ -81,6 +81,10 @@ function cx(...xs: Array<string | false | null | undefined>) {
 
 function nowLabel() {
   return new Date().toISOString();
+}
+
+function normalizeActorToken(value?: string) {
+  return String(value || "").trim().replace(/^@+/, "").toLowerCase();
 }
 
 function fmtDateTime(iso: string) {
@@ -469,16 +473,51 @@ export default function CreatorAuditLogPage() {
     setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 2600);
   };
 
-  // Mock permissions (wire to Roles & Permissions)
-  const [viewerPerms] = useState<Record<string, boolean>>({
-    "audit.view": true,
-    "audit.export": true,
-    "audit.view_sensitive": true
+  const { data: rolesPayload } = useApiResource({
+    initialData: null as WorkspaceRolesResponse | null,
+    loader: () => creatorApi.roles()
   });
 
-  const canView = !!viewerPerms["audit.view"];
-  const canExport = !!viewerPerms["audit.export"];
-  const canViewSensitive = !!viewerPerms["audit.view_sensitive"];
+  const { canView, canExport, canViewSensitive, myActorTokens } = useMemo(() => {
+    if (!rolesPayload || typeof rolesPayload !== "object") {
+      return {
+        canView: true,
+        canExport: true,
+        canViewSensitive: true,
+        myActorTokens: new Set<string>()
+      };
+    }
+
+    const payload = rolesPayload as Record<string, unknown>;
+    const permissionsRaw =
+      payload.effectivePermissions && typeof payload.effectivePermissions === "object" && !Array.isArray(payload.effectivePermissions)
+        ? (payload.effectivePermissions as Record<string, unknown>)
+        : {};
+    const currentMember =
+      payload.currentMember && typeof payload.currentMember === "object" && !Array.isArray(payload.currentMember)
+        ? (payload.currentMember as Record<string, unknown>)
+        : {};
+    const isOwner = normalizeActorToken(String(currentMember.seat || "")) === "owner";
+
+    const hasPerm = (key: string) => Boolean(permissionsRaw[key]);
+    const resolvedCanView = hasPerm("admin.audit") || hasPerm("audit.view") || isOwner;
+    const resolvedCanExport = hasPerm("audit.export") || hasPerm("admin.audit") || isOwner;
+    const resolvedCanViewSensitive = hasPerm("audit.view_sensitive") || hasPerm("admin.audit") || isOwner;
+
+    const actorTokens = new Set<string>();
+    const memberName = normalizeActorToken(typeof currentMember.name === "string" ? currentMember.name : "");
+    const memberEmail = normalizeActorToken(typeof currentMember.email === "string" ? currentMember.email : "");
+    if (memberName) actorTokens.add(memberName);
+    if (memberEmail) actorTokens.add(memberEmail);
+
+    return {
+      canView: resolvedCanView,
+      canExport: resolvedCanExport,
+      canViewSensitive: resolvedCanViewSensitive,
+      myActorTokens: actorTokens
+    };
+  }, [rolesPayload]);
+
   const { data: auditRecords } = useApiResource({
     initialData: [] as AuditLogRecord[],
     loader: () => creatorApi.auditLogs()
@@ -503,8 +542,6 @@ export default function CreatorAuditLogPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"json" | "csv">("json");
 
-  const meHandle = "@ronald";
-
   const actorOptions = useMemo(() => {
     const set = new Set<string>();
     events.forEach((e) => set.add(e.actor?.handle || e.actor?.name || "Unknown"));
@@ -520,7 +557,13 @@ export default function CreatorAuditLogPage() {
       .filter((e) => (severity === "All" ? true : e.severity === severity))
       .filter((e) => (outcome === "All" ? true : e.outcome === outcome))
       .filter((e) => (actor === "All" ? true : (e.actor?.handle || e.actor?.name) === actor))
-      .filter((e) => (onlyMine ? (e.actor?.handle || "") === meHandle : true))
+      .filter((e) => {
+        if (!onlyMine) return true;
+        if (myActorTokens.size === 0) return false;
+        const actorHandle = normalizeActorToken(e.actor?.handle);
+        const actorName = normalizeActorToken(e.actor?.name);
+        return myActorTokens.has(actorHandle) || myActorTokens.has(actorName);
+      })
       .filter((e) => {
         if (!s) return true;
         const text = [
@@ -544,7 +587,7 @@ export default function CreatorAuditLogPage() {
         if (canViewSensitive) return e;
         return { ...e, ip: undefined, location: undefined, meta: { redacted: true } };
       });
-  }, [events, range, moduleFilter, severity, outcome, actor, q, onlyMine, canViewSensitive]);
+  }, [events, range, moduleFilter, severity, outcome, actor, q, onlyMine, canViewSensitive, myActorTokens]);
 
   const stats = useMemo(() => {
     return {

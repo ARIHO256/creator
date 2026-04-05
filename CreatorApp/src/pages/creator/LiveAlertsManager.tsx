@@ -293,7 +293,7 @@ export default function LiveAlertsManager() {
   const [dealName, setDealName] = useState("");
   const [dealEndsMinutes, setDealEndsMinutes] = useState(0);
 
-  // cap timestamps (demo)
+  // Cap timestamps
   const [lastSent, setLastSent] = useState<Record<AlertKey, number>>({
     were_live: 0,
     flash_deal: 0,
@@ -594,7 +594,13 @@ export default function LiveAlertsManager() {
 
                         <div className="flex items-center gap-2">
                           <Toggle value={enabled} onChange={(v) => setEnabledDest((s) => ({ ...s, [c.key]: v }))} disabled={isBlocked} />
-                          <Btn tone="ghost" onClick={() => showNotification("Manage account (demo)")} left={<Link2 className="h-4 w-4" />}>
+                          <Btn
+                            tone="ghost"
+                            onClick={() => {
+                              window.location.assign("/Stream-platform");
+                            }}
+                            left={<Link2 className="h-4 w-4" />}
+                          >
                             Manage
                           </Btn>
                         </div>

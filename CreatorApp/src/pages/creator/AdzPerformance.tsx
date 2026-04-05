@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useApiResource } from '../../hooks/useApiResource';
-import { creatorApi, type DealzMarketplaceWorkspaceResponse } from '../../lib/creatorApi';
+import { creatorApi, type AdzCampaignRecord } from '../../lib/creatorApi';
 import { CircularProgress } from '@mui/material';
 
 import { AlertTriangle, BarChart3, Copy, ExternalLink, Lock, Share2, X } from "lucide-react";
@@ -65,6 +65,14 @@ export type PerformanceEntity = {
   series?: Array<{ dateISO: string; impressions: number; clicks: number; orders: number; earnings: number }>;
 };
 
+type CampaignPerformancePayload = {
+  campaignId?: string;
+  clicks?: number;
+  purchases?: number;
+  earnings?: number;
+  data?: Record<string, unknown>;
+};
+
 const ORANGE = "var(--color-primary)";
 
 const cx = (...xs: Array<string | false | null | undefined>) => xs.filter(Boolean).join(" ");
@@ -87,6 +95,125 @@ function formatCompensation(c?: Compensation) {
   if (c.type === "Commission") return `Commission · ${Math.round(c.commissionRate * 100)}%`;
   if (c.type === "Flat fee") return `Flat fee · ${c.currency}${Math.round(c.flatFee)}`;
   return `Hybrid · ${Math.round(c.commissionRate * 100)}% + ${c.currency}${Math.round(c.flatFee)}`;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function toNumber(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function toStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+}
+
+function toPlatform(value: string): PerfPlatform {
+  const t = value.toLowerCase();
+  if (t.includes("tiktok")) return "TikTok";
+  if (t.includes("instagram")) return "Instagram";
+  if (t.includes("youtube")) return "YouTube";
+  if (t.includes("facebook")) return "Facebook";
+  return "Other";
+}
+
+function mapCampaignToPerformanceEntity(
+  campaign: AdzCampaignRecord,
+  performance: CampaignPerformancePayload
+): PerformanceEntity {
+  const data = toRecord(campaign.data);
+  const supplier = toRecord(data.supplier);
+  const creator = toRecord(data.creator);
+  const perfData = toRecord(performance.data);
+  const offers = Array.isArray(data.offers) ? data.offers.map((entry) => toRecord(entry)) : [];
+  const variants = Array.isArray(perfData.variants)
+    ? perfData.variants.map((entry, index) => {
+      const row = toRecord(entry);
+      return {
+        id: String(row.id || `variant_${index + 1}`),
+        label: String(row.label || row.name || String.fromCharCode(65 + index)),
+        impressions: toNumber(row.impressions),
+        clicks: toNumber(row.clicks),
+        orders: toNumber(row.orders ?? row.purchases),
+        earnings: toNumber(row.earnings)
+      };
+    })
+    : undefined;
+  const series = Array.isArray(perfData.series)
+    ? perfData.series
+      .map((entry) => {
+        const row = toRecord(entry);
+        const dateISO = String(row.dateISO || row.date || "");
+        if (!dateISO) return null;
+        return {
+          dateISO,
+          impressions: toNumber(row.impressions),
+          clicks: toNumber(row.clicks),
+          orders: toNumber(row.orders ?? row.purchases),
+          earnings: toNumber(row.earnings)
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    : undefined;
+  const currency = String(data.currency || campaign.currency || "USD");
+  const compensationData = toRecord(data.compensation);
+  const compensation = compensationData.type === "Flat fee"
+    ? { type: "Flat fee", flatFee: toNumber(compensationData.flatFee), currency } as Compensation
+    : compensationData.type === "Hybrid"
+      ? {
+        type: "Hybrid",
+        commissionRate: toNumber(compensationData.commissionRate),
+        flatFee: toNumber(compensationData.flatFee),
+        currency
+      } as Compensation
+      : {
+        type: "Commission",
+        commissionRate: toNumber(compensationData.commissionRate)
+      } as Compensation;
+
+  return {
+    id: campaign.id,
+    kind: "ad",
+    name: String(data.campaignName || campaign.title || `Ad ${campaign.id}`),
+    status: String(campaign.status || ""),
+    platforms: Array.from(new Set((toStringList(data.platforms).length ? toStringList(data.platforms) : ["Other"]).map(toPlatform))),
+    primaryItem:
+      String(data.primaryOfferId || "") ||
+      String(offers[0]?.name || ""),
+    items: offers.map((entry, index) => {
+      const price = toNumber(entry.price, Number.NaN);
+      return {
+        id: String(entry.id || `offer_${index + 1}`),
+        kind: String(entry.type || "product").toLowerCase() === "service" ? "service" : "product",
+        name: String(entry.name || "Offer"),
+        price: Number.isFinite(price) ? price : undefined,
+        imageUrl: typeof entry.posterUrl === "string" ? entry.posterUrl : undefined,
+        videoUrl: typeof entry.videoUrl === "string" ? entry.videoUrl : undefined,
+      };
+    }),
+    impressions: toNumber(perfData.impressions, Math.max(toNumber(performance.clicks) * 12, toNumber(performance.clicks))),
+    clicks: toNumber(performance.clicks),
+    orders: toNumber(performance.purchases),
+    earnings: toNumber(performance.earnings),
+    creator: {
+      name: String(creator.name || supplier.name || "Creator"),
+      handle: typeof creator.handle === "string" ? String(creator.handle).replace(/^@/, "") : undefined,
+      avatarUrl: typeof creator.avatarUrl === "string" ? creator.avatarUrl : undefined,
+    },
+    compensation,
+    hasBrokenLink: Boolean(data.hasBrokenLink),
+    variants,
+    series
+  };
 }
 
 
@@ -679,93 +806,29 @@ export default function AdzPerformancePage() {
   const [dateRange, setDateRange] = useState('7d');
   // For routing: /AdzPerformance?entityId=...
   const entityId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("entityId") || undefined : undefined;
-  const { data: workspace } = useApiResource({
-    initialData: { deals: [] } as Partial<DealzMarketplaceWorkspaceResponse>,
-    loader: () => creatorApi.dealzMarketplace(),
+  const { data: performanceEntities, loading, error } = useApiResource({
+    initialData: [] as PerformanceEntity[],
+    loader: async () => {
+      const campaigns = await creatorApi.adzCampaigns();
+      const performanceRows = await Promise.all(
+        campaigns.map((campaign) =>
+          creatorApi.adzCampaignPerformance(campaign.id)
+            .catch(() => ({} as Record<string, unknown>))
+            .then((payload) => ({ campaignId: campaign.id, payload: payload as CampaignPerformancePayload }))
+        )
+      );
+      const performanceByCampaign = new Map(
+        performanceRows.map((entry) => [entry.campaignId, entry.payload])
+      );
+      return campaigns.map((campaign) =>
+        mapCampaignToPerformanceEntity(campaign, performanceByCampaign.get(campaign.id) || {})
+      );
+    }
   });
   void showSuccess;
   void showNotification;
   void dateRange;
   void setDateRange;
-
-  const marketplaceEntities: PerformanceEntity[] = useMemo(() => {
-    const rows = Array.isArray((workspace as any)?.deals) ? ((workspace as any).deals as Array<Record<string, unknown>>) : [];
-    const toNumber = (value: unknown, fallback = 0) => {
-      if (typeof value === "number" && Number.isFinite(value)) return value;
-      if (typeof value === "string" && value.trim()) {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed)) return parsed;
-      }
-      return fallback;
-    };
-    const toPlatform = (value: string): PerfPlatform => {
-      const t = value.toLowerCase();
-      if (t.includes("tiktok")) return "TikTok";
-      if (t.includes("instagram")) return "Instagram";
-      if (t.includes("youtube")) return "YouTube";
-      if (t.includes("facebook")) return "Facebook";
-      return "Other";
-    };
-    return rows.map((deal, index) => {
-      const shoppable = (deal.shoppable && typeof deal.shoppable === "object" ? deal.shoppable : {}) as Record<string, unknown>;
-      const live = (deal.live && typeof deal.live === "object" ? deal.live : {}) as Record<string, unknown>;
-      const creator = (deal.creator && typeof deal.creator === "object" ? deal.creator : {}) as Record<string, unknown>;
-      const offers = Array.isArray(shoppable.offers) ? (shoppable.offers as Array<Record<string, unknown>>) : [];
-      const featured = Array.isArray(live.featured) ? (live.featured as Array<Record<string, unknown>>) : [];
-      const items: PerformanceItem[] = [
-        ...offers.map((item, itemIndex) => {
-          const price = toNumber(item.price, Number.NaN);
-          return {
-            id: String(item.id || `offer_${itemIndex + 1}`),
-            kind: String(item.type || "product").toLowerCase() === "service" ? "service" : "product",
-            name: String(item.name || "Offer"),
-            price: Number.isFinite(price) ? price : undefined,
-            imageUrl: typeof item.posterUrl === "string" ? item.posterUrl : undefined,
-            videoUrl: typeof item.videoUrl === "string" ? item.videoUrl : undefined,
-          };
-        }),
-        ...featured.map((item, itemIndex) => ({
-          id: String(item.id || `featured_${itemIndex + 1}`),
-          kind: String(item.kind || "product").toLowerCase() === "service" ? "service" : "product",
-          name: String(item.name || "Featured item"),
-          imageUrl: typeof item.posterUrl === "string" ? item.posterUrl : undefined,
-          videoUrl: typeof item.videoUrl === "string" ? item.videoUrl : undefined,
-        })),
-      ];
-      const platformsRaw = [
-        ...(Array.isArray(shoppable.platforms) ? shoppable.platforms : []),
-        ...(Array.isArray(live.platforms) ? live.platforms : []),
-      ].map((entry) => String(entry || "").trim()).filter(Boolean);
-      const platforms = Array.from(new Set((platformsRaw.length ? platformsRaw : ["Other"]).map(toPlatform)));
-      const kpis = Array.isArray(shoppable.kpis) ? (shoppable.kpis as Array<Record<string, unknown>>) : [];
-      const findKpi = (keys: string[]) => {
-        const match = kpis.find((kpi) => keys.includes(String(kpi.key || kpi.label || "").toLowerCase()));
-        return toNumber(match?.value, 0);
-      };
-      const primaryOfferId = String(shoppable.primaryOfferId || "");
-      const primaryItem = items.find((item) => item.id === primaryOfferId)?.name;
-      return {
-        id: String(deal.id || `deal_${index + 1}`),
-        kind: shoppable && Object.keys(shoppable).length > 0 ? "ad" : "deal",
-        name: String(deal.title || live.title || shoppable.campaignName || "Deal"),
-        status: String(shoppable.status || live.status || deal.status || "Draft"),
-        platforms,
-        primaryItem,
-        items,
-        impressions: findKpi(["impressions", "views"]),
-        clicks: findKpi(["clicks", "tap through"]),
-        orders: findKpi(["orders", "sales"]),
-        earnings: findKpi(["earnings", "gmv", "revenue"]),
-        creator: {
-          name: String(creator.name || "Creator"),
-          handle: typeof creator.handle === "string" ? creator.handle : undefined,
-          avatarUrl: typeof creator.avatarUrl === "string" ? creator.avatarUrl : undefined,
-        },
-        compensation: { type: "Commission", commissionRate: 0 },
-        hasBrokenLink: false,
-      } satisfies PerformanceEntity;
-    });
-  }, [workspace]);
 
   return (
     <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 overflow-x-hidden transition-colors">
@@ -776,7 +839,7 @@ export default function AdzPerformancePage() {
               <img src="/MyliveDealz PNG Icon 1.png" alt="LiveDealz" className="h-7 w-7 sm:h-8 sm:w-8 object-contain" />
               <div className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-50">Adz Performance</div>
             </div>
-            <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 ml-14">Dedicated deep analytics page backed by Dealz workspace records.</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 ml-14">Dedicated deep analytics page backed by Adz campaign and performance records.</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => window.history.back()}>
@@ -786,7 +849,17 @@ export default function AdzPerformancePage() {
         </div>
 
         <div className="mt-6">
-          <AdzPerformance entities={marketplaceEntities} selectedId={entityId} canView={true} showOpenFullPage={false} />
+          {loading ? (
+            <div className="rounded-3xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-700 p-8 flex items-center justify-center">
+              <CircularProgress size={26} />
+            </div>
+          ) : error ? (
+            <div className="rounded-3xl border border-rose-200 bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800 p-4 text-sm">
+              Failed to load Adz performance records.
+            </div>
+          ) : (
+            <AdzPerformance entities={performanceEntities} selectedId={entityId} canView={true} showOpenFullPage={false} />
+          )}
         </div>
       </div>
     </div>

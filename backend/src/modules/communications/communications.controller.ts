@@ -13,7 +13,7 @@ import { UpdateSupportTicketDto } from './dto/update-support-ticket.dto.js';
 import { CommunicationsService } from './communications.service.js';
 
 @Controller()
-@Roles('SELLER', 'PROVIDER', 'ADMIN')
+@Roles('CREATOR', 'SELLER', 'PROVIDER', 'ADMIN')
 export class CommunicationsController {
   constructor(private readonly service: CommunicationsService) {}
 

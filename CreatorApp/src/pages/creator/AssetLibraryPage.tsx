@@ -114,7 +114,7 @@ type Asset = {
   role?: "opener" | "hero" | "offer" | "item_poster" | "item_video" | "lower_third" | "overlay" | "script";
   usageNotes?: string;
   restrictions?: string;
-  /** Viewer hints for downstream builders (demo) */
+  /** Viewer hints for downstream builders */
   desktopMode?: "fullscreen" | "modal";
   aspect?: "vertical" | "horizontal";
   // Optional deal linkage
@@ -778,8 +778,11 @@ function PreviewPane({
         </button>
         <button
           className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 transition-colors px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
-          onClick={() => { }}
-          title="Download (demo)"
+          onClick={() => {
+            if (!asset.previewUrl) return;
+            window.open(asset.previewUrl, "_blank", "noopener,noreferrer");
+          }}
+          title="Download"
         >
           <Download className="h-4 w-4" />
           Download
@@ -2953,7 +2956,7 @@ export default function AssetLibraryPage() {
                   checked={adminMode}
                   onChange={(e) => setAdminMode(e.target.checked)}
                 />
-                Admin mode (demo)
+                Admin mode
               </label>
             </div>
           )}
@@ -3066,7 +3069,7 @@ export default function AssetLibraryPage() {
           <div className="mt-3 space-y-3">
             <Dropzone
               accept="*/*"
-              helper="Supported: MP4, MOV, JPG, PNG, PDF · Max 500MB (demo)"
+              helper="Supported: MP4, MOV, JPG, PNG, PDF · Max 500MB"
               onFiles={(files, fromCamera) => handleSubmitFiles(files, fromCamera)}
               cameraMode
             />

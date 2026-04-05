@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -56,7 +57,7 @@ import { creatorApi } from "../../lib/creatorApi";
  * Notes:
  * - Permissions are organized by capability group (e.g., Shoppable Adz, Live Sessionz).
  * - Sensitive permissions show a warning badge and hint.
- * - This file is self-contained UI (demo data); wire to your API as needed.
+ * - Wired to workspace roles/security/audit backend endpoints.
  */
 
 const ORANGE = "#f77f00";
@@ -635,6 +636,7 @@ type TabKey = "roles" | "members" | "invites" | "suppliers" | "security";
 
 export default function RolesPermissionsPremium() {
   const { toasts, push } = useToasts();
+  const navigate = useNavigate();
 
   const [tab, setTab] = useState<TabKey>("roles");
   const [roleSearch, setRoleSearch] = useState("");
@@ -660,7 +662,7 @@ export default function RolesPermissionsPremium() {
   const [inviteRoleId, setInviteRoleId] = useState("viewer");
   const [inviteSeat, setInviteSeat] = useState<Seat>("Manager");
 
-  // security (demo toggles)
+  // Security controls (persisted via roles security endpoint)
   const [require2FA, setRequire2FA] = useState(true);
   const [allowExternalInvites, setAllowExternalInvites] = useState(false);
   const [supplierGuestExpiryHours, setSupplierGuestExpiryHours] = useState(24);
@@ -1093,6 +1095,45 @@ export default function RolesPermissionsPremium() {
     log("Owner", "Changed member status", `${memberId} → ${status}`, status === "Suspended" ? "critical" : "warn");
   }
 
+  function exportAuditCsv() {
+    if (!audit.length) {
+      push("No audit records to export.", "error");
+      return;
+    }
+    const headers = ["Timestamp", "Actor", "Action", "Detail", "Severity"];
+    const escape = (value: string) => {
+      if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    };
+    const lines = [
+      headers.join(","),
+      ...audit.map((entry) =>
+        [
+          entry.at,
+          entry.actor,
+          entry.action,
+          entry.detail || "",
+          entry.severity || "info"
+        ]
+          .map((part) => escape(String(part)))
+          .join(",")
+      )
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `roles-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    push("Audit exported.", "success");
+    log("Owner", "Exported audit log", "CSV");
+  }
+
   // filtered permission groups for editor
   const permGroupsFiltered = useMemo(() => {
     const q = permSearch.trim().toLowerCase();
@@ -1485,7 +1526,7 @@ export default function RolesPermissionsPremium() {
                           <SmallBtn
                             tone="ghost"
                             icon={<Pencil className="h-4 w-4" />}
-                            onClick={() => push("Open member details (demo).")}
+                            onClick={() => push(`Member: ${m.name} · ${m.email} · ${m.seat}`)}
                           >
                             Details
                           </SmallBtn>
@@ -1706,15 +1747,34 @@ export default function RolesPermissionsPremium() {
 
             <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
               <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Quick actions</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">These shortcuts are still placeholders until a dedicated supplier API is wired in.</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Shortcuts for supplier workflows and incident escalation.</div>
               <div className="mt-3 flex flex-col gap-2">
-                <SmallBtn icon={<ExternalLink className="h-4 w-4" />} onClick={() => push("Open supplier directory (demo).")}>
+                <SmallBtn icon={<ExternalLink className="h-4 w-4" />} onClick={() => navigate("/sellers")}>
                   Supplier directory
                 </SmallBtn>
-                <SmallBtn icon={<ShieldCheck className="h-4 w-4" />} onClick={() => push("Review supplier permissions (demo).")}>
+                <SmallBtn icon={<ShieldCheck className="h-4 w-4" />} onClick={() => setTab("roles")}>
                   Review permissions
                 </SmallBtn>
-                <SmallBtn icon={<AlertTriangle className="h-4 w-4" />} onClick={() => push("Report incident to Ops (demo).")} tone="danger">
+                <SmallBtn
+                  icon={<AlertTriangle className="h-4 w-4" />}
+                  onClick={async () => {
+                    try {
+                      const ticket = await creatorApi.createSupportTicket({
+                        marketplace: "creator",
+                        category: "incident",
+                        subject: "Supplier access incident report",
+                        severity: "high",
+                        ref: "roles-suppliers"
+                      });
+                      const ticketId = typeof ticket?.id === "string" ? ticket.id : "";
+                      push(ticketId ? `Incident reported: ${ticketId}` : "Incident reported.", "success");
+                      log("Owner", "Incident reported", ticketId || "support ticket");
+                    } catch {
+                      push("Failed to report incident.", "error");
+                    }
+                  }}
+                  tone="danger"
+                >
                   Incident report
                 </SmallBtn>
               </div>
@@ -1722,7 +1782,7 @@ export default function RolesPermissionsPremium() {
               <div className="mt-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 shadow-sm transition-colors">
                 <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Coverage status</div>
                 <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                  Supplier guests, invites, security counts and audit entries now come from backend data. Directory management and incident shortcuts are still placeholder actions.
+                  Supplier guests, invites, security counts and audit entries are backed by workspace APIs, with live shortcuts for directory and incident escalation.
                 </div>
               </div>
             </div>
@@ -1809,7 +1869,7 @@ export default function RolesPermissionsPremium() {
                   <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Audit log</div>
                   <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">High-signal events: role changes, invites, share link generation, safety incidents.</div>
                 </div>
-                <SmallBtn icon={<Copy className="h-4 w-4" />} onClick={() => push("Export audit (demo).")}>
+                <SmallBtn icon={<Copy className="h-4 w-4" />} onClick={exportAuditCsv}>
                   Export
                 </SmallBtn>
               </div>

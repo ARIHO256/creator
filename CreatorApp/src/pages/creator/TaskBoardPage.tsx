@@ -114,7 +114,7 @@ function seedInitials(name: string) {
   return (a + b).toUpperCase();
 }
 
-// Deterministic due (demo)
+// Deterministic due helper
 function getDeterministicDue(seed: number) {
   // Range: -2 to 7 days
   const days = (seed % 10) - 2;

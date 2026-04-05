@@ -320,7 +320,7 @@ export function CreatorLiveDealzFeedPage() {
     }, 1000);
   };
 
-  /* Filter Logic with mocked data checks */
+  /* Filter logic */
   const filteredFeed = homeData.feedItems.filter((item) => {
     if (activeTab === "For You") return true;
     if (activeTab === "My Campaigns") return ["live", "upcoming"].includes(item.type);

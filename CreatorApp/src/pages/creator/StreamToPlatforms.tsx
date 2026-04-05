@@ -49,7 +49,7 @@ import {
  *
  * Notes:
  * - Self-contained (TailwindCSS assumed)
- * - Mock data only, replace with real API wiring
+ * - Backed by `liveTool("streaming")` + `patchLiveTool("streaming")`
  */
 
 const ORANGE = '#f77f00';
@@ -813,8 +813,28 @@ export default function StreamToPlatformsPage() {
                                   <button
                                     className="inline-flex h-8 items-center gap-2 rounded-xl bg-slate-900 dark:bg-slate-100 px-3 text-[10px] sm:text-xs font-semibold text-white dark:text-slate-900 hover:opacity-95 transition active:scale-[0.98]"
                                     onClick={() => {
-                                      setDestinations((prev) => prev.map((x) => (x.id === d.id ? { ...x, status: 'Connected', errorTitle: undefined, errorNext: undefined } : x)));
-                                      showSuccess('Re-auth complete (demo)');
+                                      const nextDestinations = destinations.map((entry) =>
+                                        entry.id === d.id
+                                          ? { ...entry, status: 'Connected', errorTitle: undefined, errorNext: undefined }
+                                          : entry
+                                      );
+                                      setDestinations(nextDestinations);
+                                      void creatorApi.patchLiveTool("streaming", {
+                                        isPro,
+                                        sessionStatus,
+                                        profile,
+                                        degradeMode,
+                                        recordMaster,
+                                        autoReplay,
+                                        autoHighlights,
+                                        downloadMasterAllowed,
+                                        estimatedUploadMbps,
+                                        destinations: nextDestinations,
+                                      }).then(() => {
+                                        showSuccess(`Re-auth complete for ${d.name}`);
+                                      }).catch(() => {
+                                        showError(`Could not complete re-auth for ${d.name}`);
+                                      });
                                     }}
                                   >
                                     <RefreshCw className="h-3.5 w-3.5" />
@@ -1281,7 +1301,7 @@ export default function StreamToPlatformsPage() {
 
                 <div className="mt-2 rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
                   <div className="text-[10px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">Premium policy hints</div>
-                  <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-500 leading-tight">Automatic restricted terms detection and platform policy hints (demo).</div>
+                  <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-500 leading-tight">Automatic restricted terms detection and platform policy hints.</div>
                 </div>
               </div>
             </div>

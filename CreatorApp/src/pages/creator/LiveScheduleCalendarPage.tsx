@@ -78,7 +78,7 @@ function toSession(record: Record<string, unknown>): Session {
   };
 }
 
-// Mock Toast for user feedback
+// Toast for user feedback
 function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   React.useEffect(() => {
     const timer = setTimeout(onClose, 3000);
@@ -96,7 +96,7 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
 
 function LiveScheduleCalendarPage() {
   const navigate = useNavigate();
-  const { data: workspace } = useApiResource({
+  const { data: workspace, setData: setWorkspace } = useApiResource({
     initialData: {} as ScheduleWorkspaceResponse,
     loader: () => creatorApi.liveScheduleWorkspace() as Promise<ScheduleWorkspaceResponse>,
   });
@@ -156,20 +156,62 @@ function LiveScheduleCalendarPage() {
 
   const [rescheduleSession, setRescheduleSession] = useState<Session | null>(null);
 
+  const applySessionPatch = (sessionId: string, patch: Record<string, unknown>) => {
+    setWorkspace((current) => ({
+      ...current,
+      sessions: (current.sessions || []).map((entry) => {
+        const row = entry as Record<string, unknown>;
+        return String(row.id || "") === sessionId ? { ...row, ...patch } : row;
+      })
+    }));
+  };
+
   const handleStartRehearsal = (session: Session): void => {
+    const nowIso = new Date().toISOString();
+    applySessionPatch(session.id, {
+      status: "Ready",
+      rehearsalStartedAt: nowIso
+    });
+    void creatorApi.updateLiveSession(session.id, {
+      status: "ready",
+      data: {
+        rehearsalStartedAt: nowIso,
+        rehearsalStatus: "in_progress"
+      }
+    }).catch(() => {
+      showToast(`Unable to start rehearsal for "${session.title}" right now.`);
+    });
     showToast(`Entering rehearsal for "${session.title}"`);
-    // Navigate to Live Studio
     setTimeout(() => {
-      navigate("/live-studio");
-    }, 1000);
+      navigate(`/live-studio?sessionId=${encodeURIComponent(session.id)}`);
+    }, 600);
   };
 
   const handleRequestReschedule = (session: Session): void => {
     setRescheduleSession(session);
   };
 
-  const submitReschedule = (reason: string) => {
-    showToast(`Reschedule request sent: "${reason}"`);
+  const submitReschedule = (payload: { reason: string; preferredSlot?: string | null }) => {
+    if (!rescheduleSession) return;
+    const request = {
+      id: `reschedule_${Date.now()}`,
+      requestedAt: new Date().toISOString(),
+      reason: payload.reason,
+      preferredSlot: payload.preferredSlot || null,
+      status: "pending"
+    };
+    applySessionPatch(rescheduleSession.id, {
+      rescheduleRequested: true,
+      lastRescheduleRequest: request
+    });
+    void creatorApi.updateLiveSession(rescheduleSession.id, {
+      data: {
+        rescheduleRequest: request
+      }
+    }).catch(() => {
+      showToast(`Unable to submit the reschedule request for "${rescheduleSession.title}".`);
+    });
+    showToast(`Reschedule request sent for "${rescheduleSession.title}"`);
     setRescheduleSession(null);
   };
 
@@ -566,7 +608,7 @@ type RescheduleDrawerProps = {
   session: Session;
   aiSlots: Array<{ id: number; label: string; reason: string; recommendedFor: string }>;
   onClose: () => void;
-  onSubmit: (reason: string) => void;
+  onSubmit: (payload: { reason: string; preferredSlot?: string | null }) => void;
 };
 
 function RescheduleDrawer({ session, aiSlots, onClose, onSubmit }: RescheduleDrawerProps) {
@@ -575,10 +617,10 @@ function RescheduleDrawer({ session, aiSlots, onClose, onSubmit }: RescheduleDra
 
   const handleSubmit = () => {
     if (!reason.trim() && !selectedSlot) return;
-    const finalReason = selectedSlot
-      ? `Preferred slot: ${aiSlots.find((s) => s.id === selectedSlot)?.label}. ${reason}`
-      : reason;
-    onSubmit(finalReason);
+    onSubmit({
+      reason: reason.trim(),
+      preferredSlot: selectedSlot ? aiSlots.find((s) => s.id === selectedSlot)?.label || null : null
+    });
   };
 
   return (

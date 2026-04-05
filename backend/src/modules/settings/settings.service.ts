@@ -623,6 +623,11 @@ export class SettingsService {
   async crewSession(userId: string, id: string, body: UpdateCrewSessionDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     this.ensureWorkspaceRoleManager(workspace);
+    const rawPayload = this.ensureObjectPayload(body.payload ?? {});
+    const payloadPatch = { ...rawPayload } as Record<string, unknown>;
+    delete payloadPatch.assignments;
+    delete payloadPatch.payload;
+
     const session = await this.prisma.workspaceCrewSession.upsert({
       where: { workspaceId_sessionKey: { workspaceId: workspace.workspace.id, sessionKey: id } },
       update: {
@@ -632,6 +637,17 @@ export class SettingsService {
         workspaceId: workspace.workspace.id,
         sessionKey: id,
         payload: { updatedAt: new Date().toISOString() } as Prisma.InputJsonValue
+      }
+    });
+    const existingPayload = this.isPlainObject(session.payload) ? (session.payload as Record<string, unknown>) : {};
+    await this.prisma.workspaceCrewSession.update({
+      where: { dbId: session.dbId },
+      data: {
+        payload: {
+          ...existingPayload,
+          ...payloadPatch,
+          updatedAt: new Date().toISOString()
+        } as Prisma.InputJsonValue
       }
     });
     if (body.assignments) {

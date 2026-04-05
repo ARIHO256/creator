@@ -565,15 +565,12 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
   );
 }
 
-// Standalone demo page (for testing)
-export default function CreatorNotificationsPanelDemo() {
-  const [open, setOpen] = useState(false);
+export default function CreatorNotificationsPage() {
+  const [open, setOpen] = useState(true);
   const btnRef = useRef<HTMLButtonElement>(null);
-  const unreadCount = 0;
 
   return (
     <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors">
-      {/* Demo top bar */}
       <header className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm px-4 md:px-6 flex items-center justify-between transition-colors">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-xl bg-[#f77f00] text-white font-bold text-sm flex items-center justify-center">
@@ -610,14 +607,14 @@ export default function CreatorNotificationsPanelDemo() {
 
       <main className="max-w-6xl mx-auto p-4 md:p-6">
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 transition-colors">
-          <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">Demo page</div>
+          <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">Notifications workspace</div>
           <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Click the bell icon to open the Notifications panel.
+            The routed page now opens the real backend-backed notifications panel instead of a demo wrapper.
           </div>
         </div>
       </main>
 
-      <NotificationsPanel open={open} onClose={() => setOpen(false)} buttonRef={btnRef} unreadCount={unreadCount} />
+      <NotificationsPanel open={open} onClose={() => setOpen(false)} buttonRef={btnRef} />
     </div>
   );
 }

@@ -41,7 +41,6 @@ import { creatorApi } from "../../lib/creatorApi";
  *      - "User X added as Co-host for Session Y", availability requests, overrides, etc.
  *
  * Notes:
- *  - This is a front-end mock showing UX + data modeling. Wire to your backend later.
  *  - Orange is the primary color to match Roles & Permissions.
  */
 
@@ -84,6 +83,7 @@ type Session = {
   campaign: string;
   status: SessionStatus;
   startISO: string; // ISO string in UTC
+  endISO?: string;
   durationMin: number;
   cohostSlots: number;
 };
@@ -689,6 +689,7 @@ function TinySwitch({
 export default function CreatorLiveCrewManagementPremium() {
   const navigate = useNavigate();
   const { toasts, push } = useToasts();
+  const rosterSearchRef = React.useRef<HTMLInputElement>(null);
   const [currentUser, setCurrentUser] = useState("User");
   const [currentUserRoleId, setCurrentUserRoleId] = useState<WorkspaceRoleId>("viewer");
   const [viewerPerms, setViewerPerms] = useState<Record<PermissionId, boolean>>(() =>
@@ -705,7 +706,7 @@ export default function CreatorLiveCrewManagementPremium() {
 
   const [assignmentsBySession, setAssignmentsBySession] = useState<Record<string, Assignments>>({});
 
-  const [locksBySession] = useState<Record<string, SoftLocksBySession>>({});
+  const [locksBySession, setLocksBySession] = useState<Record<string, SoftLocksBySession>>({});
 
   const [sessionPermsBySession, setSessionPermsBySession] = useState<Record<string, SessionPerms>>(() =>
     buildInitialSessionPerms(assignmentsBySession)
@@ -719,6 +720,7 @@ export default function CreatorLiveCrewManagementPremium() {
   const [inviteTo, setInviteTo] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteSupplier, setInviteSupplier] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
 
   const [conflictDialog, setConflictDialog] = useState<{
     open: boolean;
@@ -767,9 +769,29 @@ export default function CreatorLiveCrewManagementPremium() {
 
   const sessionLocks = activeSession ? locksBySession[activeSession.id] || {} : {};
   const sessionPerms = activeSession ? sessionPermsBySession[activeSession.id] || EMPTY_SESSION_PERMS : EMPTY_SESSION_PERMS;
+  const filteredMembers = useMemo(() => {
+    const query = memberSearch.trim().toLowerCase();
+    if (!query) return members;
+    return members.filter((member) =>
+      `${member.name} ${member.email} ${member.roleId} ${member.status}`.toLowerCase().includes(query)
+    );
+  }, [memberSearch, members]);
 
-  function addAudit(who: string, what: string, meta: string) {
-    setAudit((prev) => [{ id: uid("aud"), when: nowLabel(), who, what, meta }, ...prev].slice(0, 40));
+  function persistCrewSessionState(sessionId: string, payload: Record<string, unknown>) {
+    if (!hasHydratedCrew || !sessionId || sessionId === "__none__") return;
+    void creatorApi.updateCrewSession(sessionId, payload).catch(() => {
+      push("Unable to sync crew changes right now.", "error");
+    });
+  }
+
+  function addAudit(who: string, what: string, meta: string, sessionId: string = activeSessionIdSafe) {
+    setAudit((prev) => {
+      const next = [{ id: uid("aud"), when: nowLabel(), who, what, meta }, ...prev].slice(0, 40);
+      if (sessionId) {
+        persistCrewSessionState(sessionId, { auditEntries: next });
+      }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -848,9 +870,14 @@ export default function CreatorLiveCrewManagementPremium() {
 
         if (Array.isArray(crewSessions) && crewSessions.length > 0) {
           const mapped: Record<string, Assignments> = {};
+          const nextAvailabilityByMember: AvailabilityByMember = {};
+          const nextSessionPerms: Record<string, SessionPerms> = {};
+          const nextSessionLocks: Record<string, SoftLocksBySession> = {};
+          const nextAuditEntries: AuditEntry[] = [];
           crewSessions.forEach((entry) => {
             const row = entry as Record<string, unknown>;
             const items = Array.isArray(row.assignments) ? row.assignments : [];
+            const sessionId = String(row.id || "");
             const next: Assignments = { hostId: null, producerId: null, moderatorIds: [], cohostIds: [] };
             items.forEach((assignment) => {
               const a = assignment as Record<string, unknown>;
@@ -867,10 +894,75 @@ export default function CreatorLiveCrewManagementPremium() {
                 next.cohostIds.push(memberId);
               }
             });
-            mapped[String(row.id || "")] = next;
+            mapped[sessionId] = next;
+
+            if (row.availabilityByMember && typeof row.availabilityByMember === "object" && !Array.isArray(row.availabilityByMember)) {
+              Object.entries(row.availabilityByMember as Record<string, unknown>).forEach(([memberId, calendar]) => {
+                const payload = calendar && typeof calendar === "object" && !Array.isArray(calendar)
+                  ? (calendar as Record<string, unknown>)
+                  : {};
+                nextAvailabilityByMember[memberId] = {
+                  connected: Boolean(payload.connected),
+                  privacy: payload.privacy === "details" ? "details" : "busy_free",
+                  updatedAt: String(payload.updatedAt || "Not connected"),
+                  events: Array.isArray(payload.events)
+                    ? payload.events.map((item, index) => {
+                      const event = item && typeof item === "object" && !Array.isArray(item)
+                        ? (item as Record<string, unknown>)
+                        : {};
+                      return {
+                        id: String(event.id || `evt_${index + 1}`),
+                        startISO: String(event.startISO || ""),
+                        endISO: String(event.endISO || ""),
+                        title: String(event.title || "")
+                      };
+                    })
+                    : []
+                };
+              });
+            }
+
+            if (row.sessionPerms && typeof row.sessionPerms === "object" && !Array.isArray(row.sessionPerms)) {
+              nextSessionPerms[sessionId] = row.sessionPerms as SessionPerms;
+            }
+
+            if (row.sessionLocks && typeof row.sessionLocks === "object" && !Array.isArray(row.sessionLocks)) {
+              nextSessionLocks[sessionId] = row.sessionLocks as SoftLocksBySession;
+            }
+
+            if (Array.isArray(row.auditEntries)) {
+              row.auditEntries.forEach((item) => {
+                const auditRow = item && typeof item === "object" && !Array.isArray(item)
+                  ? (item as Record<string, unknown>)
+                  : {};
+                nextAuditEntries.push({
+                  id: String(auditRow.id || uid("aud")),
+                  when: String(auditRow.when || nowLabel()),
+                  who: String(auditRow.who || "User"),
+                  what: String(auditRow.what || ""),
+                  meta: String(auditRow.meta || "")
+                });
+              });
+            }
           });
           if (Object.keys(mapped).length > 0) {
             setAssignmentsBySession((prev) => ({ ...prev, ...mapped }));
+          }
+          if (Object.keys(nextAvailabilityByMember).length > 0) {
+            setAvailabilityByMember((prev) => ({ ...prev, ...nextAvailabilityByMember }));
+          }
+          if (Object.keys(nextSessionPerms).length > 0) {
+            setSessionPermsBySession((prev) => ({ ...prev, ...nextSessionPerms }));
+          }
+          if (Object.keys(nextSessionLocks).length > 0) {
+            setLocksBySession((prev) => ({ ...prev, ...nextSessionLocks }));
+          }
+          if (nextAuditEntries.length > 0) {
+            const deduped = new Map<string, AuditEntry>();
+            [...nextAuditEntries, ...audit].forEach((entry) => {
+              deduped.set(entry.id, entry);
+            });
+            setAudit(Array.from(deduped.values()).slice(0, 40));
           }
         }
       })
@@ -916,11 +1008,29 @@ export default function CreatorLiveCrewManagementPremium() {
     });
   }, [activeSessionId, assignmentsBySession, hasHydratedCrew]);
 
+  useEffect(() => {
+    if (!hasHydratedCrew) return;
+    if (!activeSessionIdSafe || activeSessionIdSafe === "__none__") return;
+    const sessionPermsPayload = sessionPermsBySession[activeSessionIdSafe];
+    if (!sessionPermsPayload && Object.keys(availabilityByMember).length === 0) return;
+    persistCrewSessionState(activeSessionIdSafe, {
+      ...(sessionPermsPayload ? { sessionPerms: sessionPermsPayload } : {}),
+      ...(Object.keys(availabilityByMember).length > 0 ? { availabilityByMember } : {})
+    });
+  }, [activeSessionIdSafe, availabilityByMember, hasHydratedCrew, sessionPermsBySession]);
+
 
 
   function requestUnlock(sessionId: string, lock: SoftLock) {
     push("Unlock requested");
-    addAudit(currentUser, `Unlock requested`, `${lock.label} · Session ${sessionId}`);
+    const request = {
+      id: uid("unlock"),
+      label: lock.label,
+      reason: lock.reason,
+      requestedAt: new Date().toISOString()
+    };
+    persistCrewSessionState(sessionId, { lastUnlockRequest: request });
+    addAudit(currentUser, `Unlock requested`, `${lock.label} · Session ${sessionId}`, sessionId);
   }
 
   function ensureViewerCanEditAssignments(): boolean {
@@ -960,7 +1070,17 @@ export default function CreatorLiveCrewManagementPremium() {
     }
     const m = getMember(members, memberId);
     push("Availability update requested");
-    addAudit(currentUser, "Availability update requested", `${m?.name || memberId}${activeSessionIdSafe ? ` · Session ${activeSessionIdSafe}` : ""}`);
+    if (activeSessionIdSafe) {
+      persistCrewSessionState(activeSessionIdSafe, {
+        lastAvailabilityRequest: {
+          id: uid("avail"),
+          memberId,
+          memberName: m?.name || memberId,
+          requestedAt: new Date().toISOString()
+        }
+      });
+    }
+    addAudit(currentUser, "Availability update requested", `${m?.name || memberId}${activeSessionIdSafe ? ` · Session ${activeSessionIdSafe}` : ""}`, activeSessionIdSafe);
   }
 
   // Conflict detection: overlaps with other sessionz OR calendar busy
@@ -1314,7 +1434,7 @@ export default function CreatorLiveCrewManagementPremium() {
     };
   }
 
-  function sendInvite() {
+  async function sendInvite() {
     if (!ensureViewerCanEditAssignments()) return;
 
     const to = inviteTo.trim();
@@ -1347,38 +1467,63 @@ export default function CreatorLiveCrewManagementPremium() {
               ? "moderator"
               : "cohost";
 
-    const newId = uid(inviteMode === "guest" ? "G" : "I");
-
-    setMembers((prev) => [
-      {
-        id: newId,
+    try {
+      const invited = await creatorApi.createRoleInvite({
         name: inferredName + (inviteMode === "guest" ? " (guest)" : ""),
         email: to,
-        handle: undefined,
         roleId: roleIdForInvite,
-        status: "Invited",
-        tzLabel: "EAT (+3)",
-        tzOffsetHours: 3
-      },
-      ...prev
-    ]);
+        seat: inviteMode === "guest" ? "Guest" : "Team"
+      });
 
-    setAvailabilityByMember((prev) => ({
-      ...prev,
-      [newId]: defaultAvailabilityForNewMember(roleIdForInvite)
-    }));
+      const memberId = String((invited as Record<string, unknown>).id || uid(inviteMode === "guest" ? "G" : "I"));
+      setMembers((prev) => [
+        {
+          id: memberId,
+          name: String((invited as Record<string, unknown>).name || inferredName),
+          email: String((invited as Record<string, unknown>).email || to),
+          handle: undefined,
+          roleId: String((invited as Record<string, unknown>).roleId || roleIdForInvite),
+          status: "Invited",
+          tzLabel: "EAT (+3)",
+          tzOffsetHours: 3
+        },
+        ...prev.filter((entry) => entry.id !== memberId)
+      ]);
 
-    push("Invite sent", "success");
-    addAudit(
-      currentUser,
-      inviteMode === "guest" ? "Guest invite sent" : "Invite sent",
-      `${inferredName} · ${to} · ${inviteRole}${activeSessionIdSafe ? ` · Session ${activeSessionIdSafe}` : ""}${inviteMode === "guest" && inviteSupplier.trim() ? ` · Supplier: ${inviteSupplier.trim()}` : ""}`
-    );
+      setAvailabilityByMember((prev) => ({
+        ...prev,
+        [memberId]: prev[memberId] || defaultAvailabilityForNewMember(roleIdForInvite)
+      }));
 
-    setInviteOpen(false);
-    setInviteTo("");
-    setInviteName("");
-    setInviteSupplier("");
+      if (activeSessionIdSafe) {
+        persistCrewSessionState(activeSessionIdSafe, {
+          lastInvite: {
+            id: uid("invite"),
+            memberId,
+            email: to,
+            role: inviteRole,
+            mode: inviteMode,
+            supplier: inviteSupplier.trim() || null,
+            invitedAt: new Date().toISOString()
+          }
+        });
+      }
+
+      push("Invite sent", "success");
+      addAudit(
+        currentUser,
+        inviteMode === "guest" ? "Guest invite sent" : "Invite sent",
+        `${inferredName} · ${to} · ${inviteRole}${activeSessionIdSafe ? ` · Session ${activeSessionIdSafe}` : ""}${inviteMode === "guest" && inviteSupplier.trim() ? ` · Supplier: ${inviteSupplier.trim()}` : ""}`,
+        activeSessionIdSafe
+      );
+
+      setInviteOpen(false);
+      setInviteTo("");
+      setInviteName("");
+      setInviteSupplier("");
+    } catch {
+      push("Unable to send invite right now", "error");
+    }
   }
 
   const inviteLink = useMemo(() => {
@@ -1578,20 +1723,31 @@ export default function CreatorLiveCrewManagementPremium() {
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <SoftButton onClick={() => setRescheduleModal(null)}>Cancel</SoftButton>
-              <PrimaryButton
-                onClick={() => {
-                  setSessions((prev: Session[]) =>
-                    prev.map((s: Session) =>
-                      s.id === rescheduleModal.sessionId
-                        ? { ...s, startISO: rescheduleModal.startISO, durationMin: rescheduleModal.durationMin, endISO: new Date(new Date(rescheduleModal.startISO).getTime() + rescheduleModal.durationMin * 60000).toISOString() }
-                        : s
-                    )
-                  );
-                  addAudit(currentUser, "Session rescheduled", `Session ${rescheduleModal.sessionId} → ${rescheduleModal.startISO}`);
-                  setRescheduleModal(null);
-                  push("Session rescheduled", "success");
-                }}
-              >
+	              <PrimaryButton
+	                onClick={() => {
+	                  const endISO = new Date(new Date(rescheduleModal.startISO).getTime() + rescheduleModal.durationMin * 60000).toISOString();
+	                  setSessions((prev: Session[]) =>
+	                    prev.map((s: Session) =>
+	                      s.id === rescheduleModal.sessionId
+	                        ? { ...s, startISO: rescheduleModal.startISO, durationMin: rescheduleModal.durationMin, endISO }
+	                        : s
+	                    )
+	                  );
+	                  void creatorApi.updateLiveSession(rescheduleModal.sessionId, {
+	                    scheduledAt: rescheduleModal.startISO,
+	                    data: {
+	                      durationMin: rescheduleModal.durationMin,
+	                      endISO,
+	                      rescheduledAt: new Date().toISOString()
+	                    }
+	                  }).catch(() => {
+	                    push("Unable to sync the session reschedule", "error");
+	                  });
+	                  addAudit(currentUser, "Session rescheduled", `Session ${rescheduleModal.sessionId} → ${rescheduleModal.startISO}`, rescheduleModal.sessionId);
+	                  setRescheduleModal(null);
+	                  push("Session rescheduled", "success");
+	                }}
+	              >
                 <Check className="h-4 w-4" />
                 Apply changes
               </PrimaryButton>
@@ -1903,22 +2059,31 @@ export default function CreatorLiveCrewManagementPremium() {
                 <div className="text-sm font-semibold">Team roster</div>
                 <div className="text-xs text-slate-500">Statuses and base roles come from Roles & Permissions.</div>
               </div>
-              <SoftButton
-                onClick={() => push("Filters coming soon")}
-                disabled={false}
-              >
-                <Search className="h-4 w-4" />
-                Filter
-              </SoftButton>
+	              <SoftButton
+	                onClick={() => {
+	                  if (memberSearch.trim()) {
+	                    setMemberSearch("");
+	                    return;
+	                  }
+	                  rosterSearchRef.current?.focus();
+	                }}
+	                disabled={false}
+	              >
+	                <Search className="h-4 w-4" />
+	                {memberSearch.trim() ? "Clear" : "Filter"}
+	              </SoftButton>
             </div>
 
             <div className="mt-3 relative">
               <Search className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                className="px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-slate-200"
-                placeholder="Search members"
-              />
-            </div>
+	              <input
+	                ref={rosterSearchRef}
+	                className="px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-slate-200"
+	                placeholder="Search members"
+	                value={memberSearch}
+	                onChange={(e) => setMemberSearch(e.target.value)}
+	              />
+	            </div>
 
             {!viewerPerms["crew.manage_assignments"] ? (
               <div className="mt-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-slate-700 dark:text-slate-300">
@@ -1927,7 +2092,7 @@ export default function CreatorLiveCrewManagementPremium() {
             ) : null}
 
             <div className="mt-3 space-y-2">
-              {members.map((m) => {
+	              {filteredMembers.map((m) => {
                 const asg = activeSession ? assignmentsBySession[activeSession.id] : undefined;
 
                 const isHost = asg?.hostId === m.id;
