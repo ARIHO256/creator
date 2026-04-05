@@ -275,13 +275,14 @@ function LineChart({ title, subtitle, seriesA, seriesB, aLabel, bLabel }) {
   const w = 640;
   const h = 160;
   const pad = 16;
+  const safeSeriesA = Array.isArray(seriesA) && seriesA.length ? seriesA : [0, 0];
 
-  const all = [...seriesA, ...(seriesB || [])];
+  const all = [...safeSeriesA, ...(seriesB || [])];
   const max = Math.max(...all, 1);
   const min = Math.min(...all, 0);
 
   function x(i) {
-    return pad + (i * (w - pad * 2)) / Math.max(1, seriesA.length - 1);
+    return pad + (i * (w - pad * 2)) / Math.max(1, safeSeriesA.length - 1);
   }
   function y(v) {
     const t = (v - min) / Math.max(1e-9, max - min);
@@ -292,7 +293,7 @@ function LineChart({ title, subtitle, seriesA, seriesB, aLabel, bLabel }) {
     return s.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(2)} ${y(v).toFixed(2)}`).join(" ");
   }
 
-  const pA = pathFor(seriesA);
+  const pA = pathFor(safeSeriesA);
   const pB = seriesB?.length ? pathFor(seriesB) : "";
 
   return (

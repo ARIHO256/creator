@@ -247,10 +247,19 @@ function Sparkline({ points }) {
   const w = 160;
   const h = 46;
   const pad = 6;
-  const xs = points.map((_, i) => pad + (i * (w - pad * 2)) / Math.max(1, points.length - 1));
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const ys = points.map((p) => {
+  const rawPoints = Array.isArray(points)
+    ? points.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+    : [];
+  const safePoints =
+    rawPoints.length >= 2
+      ? rawPoints
+      : rawPoints.length === 1
+        ? [rawPoints[0], rawPoints[0]]
+        : [0, 0];
+  const xs = safePoints.map((_, i) => pad + (i * (w - pad * 2)) / Math.max(1, safePoints.length - 1));
+  const min = Math.min(...safePoints);
+  const max = Math.max(...safePoints);
+  const ys = safePoints.map((p) => {
     const t = max === min ? 0.5 : (p - min) / (max - min);
     return h - pad - t * (h - pad * 2);
   });

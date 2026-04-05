@@ -463,7 +463,10 @@ function MiniTrend({ title, subtitle, seriesA, seriesB }) {
     return h - pad - t * (h - pad * 2);
   };
 
-  const pathFor = (s) => s.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i, s.length).toFixed(2)} ${y(v).toFixed(2)}`).join(" ");
+  const pathFor = (s) => {
+    const safeSeries = Array.isArray(s) && s.length ? s : [0, 0];
+    return safeSeries.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i, safeSeries.length).toFixed(2)} ${y(v).toFixed(2)}`).join(" ");
+  };
 
   return (
     <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
