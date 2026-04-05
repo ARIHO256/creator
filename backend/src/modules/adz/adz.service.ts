@@ -255,6 +255,44 @@ export class AdzService {
     });
     return links.map((link) => this.serializeLink(link));
   }
+  async resolveShortLink(slug: string) {
+    const normalizedSlug = this.readString(slug).replace(/^\/+|\/+$/g, '');
+    if (!normalizedSlug) {
+      throw new NotFoundException('Short link not found');
+    }
+
+    const candidates = await this.prisma.adzLink.findMany({
+      where: {
+        status: {
+          notIn: ['archived', 'expired', 'paused']
+        }
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 500
+    });
+
+    const resolved = candidates.find((link) => {
+      const data = this.parseJsonObject(link.data);
+      const shortSlug = this.readStringFrom(data, 'shortSlug', 'slug');
+      const shortUrl = this.readStringFrom(data, 'shortUrl');
+      if (shortSlug && shortSlug === normalizedSlug) {
+        return true;
+      }
+      if (shortUrl) {
+        return shortUrl.endsWith(`/s/${normalizedSlug}`) || shortUrl.endsWith(`/s/${encodeURIComponent(normalizedSlug)}`);
+      }
+      return false;
+    });
+
+    if (!resolved || !resolved.url) {
+      throw new NotFoundException('Short link not found');
+    }
+
+    return {
+      id: resolved.id,
+      url: resolved.url
+    };
+  }
   async link(userId: string, id: string) {
     const link = await this.prisma.adzLink.findFirst({
       where: { id, userId }
@@ -297,6 +335,21 @@ export class AdzService {
         });
       })
       .then((link) => this.serializeLink(link));
+  }
+  async deleteLink(userId: string, id: string) {
+    const link = await this.prisma.adzLink.findFirst({
+      where: { id, userId }
+    });
+    if (!link) {
+      throw new NotFoundException('Link not found');
+    }
+    await this.prisma.adzLink.delete({
+      where: { id: link.id }
+    });
+    return {
+      id: link.id,
+      deleted: true
+    };
   }
 
   private ensureObjectPayload(payload: unknown, overrides?: Partial<PayloadSanitizerOptions>) {

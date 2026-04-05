@@ -136,8 +136,14 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
         String(linkData.adzCampaignId || "") === campaign.id
       );
     });
+    const primaryTrackedLink = relatedLinks[0];
+    const primaryTrackedData =
+      primaryTrackedLink?.data && typeof primaryTrackedLink.data === "object" && !Array.isArray(primaryTrackedLink.data)
+        ? (primaryTrackedLink.data as Record<string, unknown>)
+        : {};
 
     const primaryUrl = String(data.shareLink || data.shareUrl || `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`);
+    const shortUrl = String(primaryTrackedData.shortUrl || data.shortUrl || primaryUrl);
 
     const channels =
       relatedLinks.length > 0
@@ -170,7 +176,7 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       campaign: { id: String(campaign.id), name: titleBase },
       supplier: { name: sellerName, type: supplierType },
       primaryUrl,
-      shortUrl: primaryUrl,
+      shortUrl,
       regionVariants: [
         { region: "Global", url: primaryUrl },
         { region: "Africa", url: `${primaryUrl}&rg=af` },

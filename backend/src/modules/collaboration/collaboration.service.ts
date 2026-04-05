@@ -193,6 +193,11 @@ export class CollaborationService {
       }
     });
 
+    await this.cleanupRemovedDealzMarketplaceRecords(
+      userId,
+      this.readDealzMarketplaceDealIds(current),
+      this.readDealzMarketplaceDealIds(next)
+    );
     await this.syncDealzMarketplaceMaterializedRecords(userId, next);
 
     return next;
@@ -303,6 +308,77 @@ export class CollaborationService {
     for (const deal of deals) {
       await this.syncDealzMarketplaceDeal(userId, actor, deal);
     }
+  }
+
+  private readDealzMarketplaceDealIds(payload: Record<string, unknown>) {
+    const deals = Array.isArray(payload.deals)
+      ? payload.deals.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry))
+      : [];
+    return Array.from(
+      new Set(
+        deals
+          .map((deal) => this.readMarketplaceString(deal.id))
+          .filter(Boolean)
+      )
+    );
+  }
+
+  private async cleanupRemovedDealzMarketplaceRecords(userId: string, previousIds: string[], nextIds: string[]) {
+    const removedIds = previousIds.filter((id) => !nextIds.includes(id));
+    if (!removedIds.length) {
+      return;
+    }
+
+    const adzBuilderIds = removedIds.map((dealId) => this.resolveMarketplaceAdzBuilderId(userId, dealId));
+    const linkIds = removedIds.flatMap((dealId) => [`${dealId}_share`, `${dealId}_landing`, `${dealId}_promo`]);
+
+    await this.prisma.adzLink.deleteMany({
+      where: {
+        userId,
+        id: {
+          in: linkIds
+        }
+      }
+    });
+    await this.prisma.adzPerformance.deleteMany({
+      where: {
+        campaignId: {
+          in: removedIds
+        }
+      }
+    });
+    await this.prisma.adzCampaign.deleteMany({
+      where: {
+        userId,
+        id: {
+          in: removedIds
+        }
+      }
+    });
+    await this.prisma.adzBuilder.deleteMany({
+      where: {
+        userId,
+        id: {
+          in: adzBuilderIds
+        }
+      }
+    });
+    await this.prisma.liveSession.deleteMany({
+      where: {
+        userId,
+        id: {
+          in: removedIds
+        }
+      }
+    });
+    await this.prisma.campaign.deleteMany({
+      where: {
+        id: {
+          in: removedIds
+        },
+        OR: [{ createdByUserId: userId }, { creatorId: userId }]
+      }
+    });
   }
 
   private async syncDealzMarketplaceDeal(userId: string, actor: any, deal: Record<string, unknown>) {

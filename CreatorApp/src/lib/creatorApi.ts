@@ -1000,6 +1000,22 @@ export const creatorApi = {
   asset(id: string) {
     return api.get<AssetRecord>(`/assets/${id}`);
   },
+  createAsset(body: {
+    campaignId?: string;
+    contractId?: string;
+    title: string;
+    assetType: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    extension?: string;
+    checksum?: string;
+    storageProvider?: string;
+    storageKey?: string;
+    url?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.post<AssetRecord>("/assets", body);
+  },
   reviewAsset(id: string, body: Record<string, unknown>) {
     return api.patch<AssetRecord>(`/assets/${id}/review`, body);
   },
@@ -1233,6 +1249,9 @@ export const creatorApi = {
   },
   updateAdzLink(id: string, body: Record<string, unknown>) {
     return api.patch<AdzLinkRecord>(`/links/${encodeURIComponent(id)}`, body);
+  },
+  deleteAdzLink(id: string) {
+    return api.delete<Record<string, unknown>>(`/links/${encodeURIComponent(id)}`);
   },
 
   contentApprovals() {

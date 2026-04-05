@@ -208,3 +208,145 @@ test('CollaborationService.updateDealzMarketplace materializes deal workspace ro
   );
   assert.equal(createdLinks[0].data.userId, 'creator-1');
 });
+
+test('CollaborationService.updateDealzMarketplace removes materialized records for deals deleted from workspace', async () => {
+  let workspacePayload: Record<string, unknown> | null = null;
+  let campaignDeleteManyArgs: any = null;
+  let adzBuilderDeleteManyArgs: any = null;
+  let adzCampaignDeleteManyArgs: any = null;
+  let adzPerformanceDeleteManyArgs: any = null;
+  let liveSessionDeleteManyArgs: any = null;
+  let adzLinkDeleteManyArgs: any = null;
+
+  const prisma = {
+    workspaceSetting: {
+      async findUnique() {
+        return {
+          payload: {
+            deals: [
+              {
+                id: 'deal-1',
+                title: 'Glow Week'
+              }
+            ],
+            selectedId: 'deal-1',
+            cart: {},
+            liveCart: {}
+          }
+        };
+      },
+      async upsert({ create, update }: any) {
+        workspacePayload = (update?.payload ?? create.payload) as Record<string, unknown>;
+        return {
+          payload: workspacePayload
+        };
+      }
+    },
+    seller: {
+      async findMany() {
+        return [];
+      },
+      async findUnique() {
+        return null;
+      }
+    },
+    creatorProfile: {
+      async findMany() {
+        return [];
+      },
+      async findUnique() {
+        return {
+          userId: 'creator-1',
+          name: 'Amina',
+          handle: 'amina',
+          isKycVerified: true
+        };
+      }
+    },
+    campaign: {
+      async findMany() {
+        return [
+          {
+            id: 'deal-1',
+            sellerId: 'seller-1',
+            seller: null,
+            creator: null,
+            metadata: { source: 'dealz-marketplace', marketplaceType: 'Shoppable Adz' },
+            title: 'Glow Week',
+            description: null,
+            startAt: null,
+            endAt: null
+          }
+        ];
+      },
+      async deleteMany(args: any) {
+        campaignDeleteManyArgs = args;
+        return { count: 1 };
+      }
+    },
+    user: {
+      async findUnique() {
+        return {
+          id: 'creator-1',
+          creatorProfile: { userId: 'creator-1' },
+          sellerProfile: null
+        };
+      }
+    },
+    liveCampaignGiveaway: {
+      async deleteMany() {
+        return { count: 0 };
+      },
+      async createMany() {
+        return { count: 0 };
+      }
+    },
+    adzBuilder: {
+      async deleteMany(args: any) {
+        adzBuilderDeleteManyArgs = args;
+        return { count: 1 };
+      }
+    },
+    adzCampaign: {
+      async deleteMany(args: any) {
+        adzCampaignDeleteManyArgs = args;
+        return { count: 1 };
+      }
+    },
+    adzPerformance: {
+      async deleteMany(args: any) {
+        adzPerformanceDeleteManyArgs = args;
+        return { count: 1 };
+      }
+    },
+    liveSession: {
+      async deleteMany(args: any) {
+        liveSessionDeleteManyArgs = args;
+        return { count: 1 };
+      }
+    },
+    adzLink: {
+      async deleteMany(args: any) {
+        adzLinkDeleteManyArgs = args;
+        return { count: 3 };
+      }
+    }
+  };
+
+  const service = new CollaborationService(prisma as any);
+  const result = await service.updateDealzMarketplace('creator-1', {
+    deals: [],
+    selectedId: '',
+    cart: {},
+    liveCart: {}
+  });
+
+  assert.deepEqual(result.deals, []);
+  assert.deepEqual((workspacePayload?.deals as any[]) ?? [], []);
+  assert.deepEqual(adzPerformanceDeleteManyArgs.where.campaignId.in, ['deal-1']);
+  assert.deepEqual(adzCampaignDeleteManyArgs.where.id.in, ['deal-1']);
+  assert.deepEqual(liveSessionDeleteManyArgs.where.id.in, ['deal-1']);
+  assert.deepEqual(campaignDeleteManyArgs.where.id.in, ['deal-1']);
+  assert.deepEqual(adzBuilderDeleteManyArgs.where.id.in, ['adz-builder_creator-1_deal-1']);
+  assert.deepEqual(adzLinkDeleteManyArgs.where.id.in.sort(), ['deal-1_landing', 'deal-1_promo', 'deal-1_share']);
+});

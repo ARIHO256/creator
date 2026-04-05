@@ -1124,6 +1124,9 @@ function CampaignDetailSlideOver({
               defaultCategory={campaign.category}
               pitchMode={pitchMode}
               aiSuggestion={aiSuggestion}
+              campaignId={campaign.apiId}
+              campaignTitle={campaign.title}
+              sellerId={campaign.sellerId}
               onAskAi={onAskAi}
             />
           </section>

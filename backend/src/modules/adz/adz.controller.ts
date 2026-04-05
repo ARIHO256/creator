@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Res } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { Public } from '../../common/decorators/public.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
@@ -15,6 +17,14 @@ import { ValidateAdzScheduleDto } from './dto/validate-adz-schedule.dto.js';
 @Roles('CREATOR', 'SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
 export class AdzController {
   constructor(private readonly service: AdzService) {}
+
+  @Public()
+  @Roles()
+  @Get('s/:slug')
+  async shortLinkRedirect(@Param('slug') slug: string, @Res() reply: FastifyReply) {
+    const resolved = await this.service.resolveShortLink(slug);
+    return reply.redirect(resolved.url, 302);
+  }
 
   @Get('adz/builder-config') builderConfig() { return this.service.builderConfig(); }
   @Get('adz/builder/:id') builder(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.builder(id, user.sub); }
@@ -58,5 +68,10 @@ export class AdzController {
   @Patch('links/:id')
   updateLink(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body(new FlexiblePayloadValidationPipe(UpsertAdzLinkDto)) body: UpsertAdzLinkDto) {
     return this.service.updateLink(user.sub, id, body);
+  }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  @Delete('links/:id')
+  deleteLink(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.service.deleteLink(user.sub, id);
   }
 }

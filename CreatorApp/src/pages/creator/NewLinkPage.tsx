@@ -236,6 +236,14 @@ const Icon = {
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   ),
+  Trash: (p: React.SVGProps<SVGSVGElement>) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...p}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  ),
 }
 
 /************** UI **************/
@@ -284,7 +292,7 @@ function Button({ variant = "primary", className, children, onClick, disabled, t
         ? "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
         : variant === "outline"
           ? "border border-slate-900 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-900 dark:hover:bg-slate-600 hover:text-white transition-colors"
-          : "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          : "border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
 
   return (
     <button type={type} className={cx(base, style)} onClick={onClick} disabled={disabled} title={title}>
@@ -385,6 +393,9 @@ function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLink
     const liveUrl = asString(data.promoLink || data.publicJoinUrl || data.livePromoLink, defaultUrl)
     const surfaces = inferCampaignSurfaces(data)
     const linked = links.filter((link) => {
+      if (String(link.status || "").toLowerCase() === "archived") {
+        return false
+      }
       const linkData =
         link.data && typeof link.data === "object" && !Array.isArray(link.data)
           ? (link.data as Record<string, unknown>)
@@ -522,7 +533,14 @@ useEffect(() => {
   const [message, setMessage] = useState("Check out these Dealz 👇")
 
   // Short link (preview deterministic)
-  const shortLink = useMemo(() => (link ? shortLinkFromUrl(link) : ""), [link])
+  const shortLink = useMemo(() => {
+    const savedShortUrl =
+      linkItem?.data && typeof linkItem.data === "object" && !Array.isArray(linkItem.data)
+        ? asString((linkItem.data as Record<string, unknown>).shortUrl)
+        : ""
+    if (savedShortUrl) return savedShortUrl
+    return link ? shortLinkFromUrl(link) : ""
+  }, [link, linkItem])
 
   // QR (preview endpoint)
   const qrUrl = useMemo(() => (link ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(link)}` : ""), [link])
@@ -620,6 +638,61 @@ useEffect(() => {
       await reload()
       onSaved?.()
     }, { successMessage: mode === "update" ? "Link updated." : "Link created." })
+  }
+
+  const archiveLink = () => {
+    if (!campaign || !linkItem) {
+      showToast("Select a saved link first")
+      return
+    }
+
+    run(async () => {
+      await creatorApi.updateAdzLink(linkItem.id, {
+        status: "archived",
+        url: linkItem.url,
+        data: {
+          ...(linkItem.data || {}),
+          archivedAt: new Date().toISOString(),
+          label: linkItem.label,
+          url: linkItem.url
+        }
+      })
+      setCampaignOptions((prev) =>
+        prev.map((entry) =>
+          entry.id === campaign.id
+            ? { ...entry, links: entry.links.filter((existing) => existing.id !== linkItem.id) }
+            : entry
+        )
+      )
+      setLinkId("")
+      await reload()
+      onSaved?.()
+    }, { successMessage: "Link archived." })
+  }
+
+  const deleteLink = () => {
+    if (!campaign || !linkItem) {
+      showToast("Select a saved link first")
+      return
+    }
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(`Delete "${linkItem.label}" permanently? This cannot be undone.`)
+      if (!confirmed) return
+    }
+
+    run(async () => {
+      await creatorApi.deleteAdzLink(linkItem.id)
+      setCampaignOptions((prev) =>
+        prev.map((entry) =>
+          entry.id === campaign.id
+            ? { ...entry, links: entry.links.filter((existing) => existing.id !== linkItem.id) }
+            : entry
+        )
+      )
+      setLinkId("")
+      await reload()
+      onSaved?.()
+    }, { successMessage: "Link deleted." })
   }
 
   const copy = async (txt: string, label?: string) => {
@@ -791,6 +864,16 @@ useEffect(() => {
                 <Icon.Copy className="w-4 h-4" /> Create new variant
               </Button>
             </div>
+            {linkItem ? (
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                <Button variant="danger" onClick={archiveLink} disabled={isSavingLink} title="Archive this saved variant" className="w-full">
+                  <Icon.X className="w-4 h-4" /> Archive saved variant
+                </Button>
+                <Button variant="danger" onClick={deleteLink} disabled={isSavingLink} title="Delete this saved variant permanently" className="w-full">
+                  <Icon.Trash className="w-4 h-4" /> Delete permanently
+                </Button>
+              </div>
+            ) : null}
             <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
               {linkItem
                 ? `Editing persisted variant ${linkItem.label}.`

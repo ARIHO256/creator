@@ -1213,7 +1213,12 @@ function normalizeCollabAsset(row: AssetRecord): Asset {
   const metadata = toRecord(row.metadata) ?? {};
   const mediaType = mediaTypeFromPayload(row.assetType, row.mimeType, metadata.mediaType);
   const source = sourceFromPayload(metadata.source || "supplier");
-  const status = reviewStatusFromPayload(metadata.status || row.status);
+  const persistedStatus = toStringValue(row.status, "").toLowerCase();
+  const status = reviewStatusFromPayload(
+    persistedStatus === "approved" || persistedStatus === "rejected" || persistedStatus === "changes_requested"
+      ? row.status
+      : metadata.reviewStage || metadata.status || row.status,
+  );
   const role = toStringValue(metadata.role, "");
 
   return {
@@ -1738,9 +1743,165 @@ export default function AssetLibraryPage() {
     });
   }
 
+  function normalizeAssetPlacement(value: Asset["role"] | SubmitDraft["role"] | string | undefined) {
+    const role = toStringValue(value, "").toLowerCase();
+    if (role === "hero") return "hero";
+    if (role === "item_poster") return "item_poster";
+    if (role === "item_video") return "item_video";
+    if (role === "overlay") return "overlay";
+    if (role === "lower_third") return "lower_third";
+    if (role === "opener") return "opener";
+    if (role === "offer") return "offer";
+    if (role === "script") return "script";
+    return "";
+  }
+
+  function normalizeBackendCampaignId(value: string) {
+    const campaignId = value.trim();
+    if (!campaignId || campaignId.startsWith("deal-campaign:")) return undefined;
+    return campaignId;
+  }
+
+  async function persistAssetToDeal(
+    asset: Pick<Asset, "id" | "title" | "mediaType" | "previewUrl" | "previewKind" | "status" | "source" | "role">,
+    target: "attach" | "adz" | "live",
+  ) {
+    if (!dealId) {
+      throw new Error("Open Asset Library from a deal to use this action.");
+    }
+
+    const workspace = await creatorApi.dealzMarketplace();
+    const deals = Array.isArray(workspace.deals) ? workspace.deals : [];
+    const nextDeals = deals.map((entry) => {
+      const currentDeal = toRecord(entry) ?? {};
+      if (toStringValue(currentDeal.id, "") !== dealId) return entry;
+
+      const currentShoppable = toRecord(currentDeal.shoppable) ?? {};
+      const currentLive = toRecord(currentDeal.live) ?? {};
+      const placement = normalizeAssetPlacement(asset.role);
+      const existingAttachments = Array.isArray(currentDeal.attachedAssets)
+        ? currentDeal.attachedAssets.filter((existing) => toStringValue(toRecord(existing)?.id, "") !== asset.id)
+        : [];
+      const nextDeal: Record<string, unknown> = {
+        ...currentDeal,
+        attachedAssets: [
+          {
+            id: asset.id,
+            title: asset.title,
+            mediaType: asset.mediaType,
+            previewUrl: asset.previewUrl,
+            previewKind: asset.previewKind,
+            status: asset.status,
+            source: asset.source,
+            role: asset.role || undefined,
+            target,
+            attachedAt: new Date().toISOString(),
+          },
+          ...existingAttachments,
+        ],
+      };
+
+      if (target === "adz") {
+        const nextShoppable: Record<string, unknown> = {
+          ...currentShoppable,
+          attachedAssetIds: Array.from(
+            new Set([
+              asset.id,
+              ...((Array.isArray(currentShoppable.attachedAssetIds) ? currentShoppable.attachedAssetIds : [])
+                .map((value) => toStringValue(value, ""))
+                .filter(Boolean)),
+            ]),
+          ),
+        };
+
+        if (asset.previewUrl) {
+          if (asset.previewKind === "video" || placement === "opener" || placement === "item_video") {
+            if (placement === "item_video" && Array.isArray(nextShoppable.offers) && nextShoppable.offers.length > 0) {
+              nextShoppable.offers = nextShoppable.offers.map((offer, offerIndex) =>
+                offerIndex === 0 ? { ...(toRecord(offer) ?? {}), videoUrl: asset.previewUrl } : offer,
+              );
+            } else {
+              nextShoppable.heroIntroVideoUrl = asset.previewUrl;
+            }
+          } else if (placement === "item_poster" && Array.isArray(nextShoppable.offers) && nextShoppable.offers.length > 0) {
+            nextShoppable.offers = nextShoppable.offers.map((offer, offerIndex) =>
+              offerIndex === 0 ? { ...(toRecord(offer) ?? {}), posterUrl: asset.previewUrl } : offer,
+            );
+          } else {
+            nextShoppable.heroImageUrl = asset.previewUrl;
+          }
+        }
+
+        nextDeal.shoppable = nextShoppable;
+      }
+
+      if (target === "live") {
+        const currentCreatives = toRecord(currentLive.creatives) ?? {};
+        const nextLive: Record<string, unknown> = {
+          ...currentLive,
+          attachedAssetIds: Array.from(
+            new Set([
+              asset.id,
+              ...((Array.isArray(currentLive.attachedAssetIds) ? currentLive.attachedAssetIds : [])
+                .map((value) => toStringValue(value, ""))
+                .filter(Boolean)),
+            ]),
+          ),
+          creatives: {
+            ...currentCreatives,
+          },
+        };
+
+        if (asset.previewUrl) {
+          if (placement === "opener") {
+            nextLive.creatives = { ...(toRecord(nextLive.creatives) ?? {}), openerAssetId: asset.id };
+          } else if (placement === "lower_third") {
+            nextLive.creatives = { ...(toRecord(nextLive.creatives) ?? {}), lowerThirdAssetId: asset.id };
+          } else if (placement === "overlay") {
+            const overlayIds = Array.isArray(toRecord(nextLive.creatives)?.overlayAssetIds)
+              ? (toRecord(nextLive.creatives)?.overlayAssetIds as unknown[])
+              : [];
+            nextLive.creatives = {
+              ...(toRecord(nextLive.creatives) ?? {}),
+              overlayAssetIds: Array.from(new Set([asset.id, ...overlayIds.map((value) => toStringValue(value, "")).filter(Boolean)])),
+            };
+          } else if (asset.previewKind === "video" || placement === "item_video") {
+            if (placement === "item_video" && Array.isArray(nextLive.featured) && nextLive.featured.length > 0) {
+              nextLive.featured = nextLive.featured.map((item, itemIndex) =>
+                itemIndex === 0 ? { ...(toRecord(item) ?? {}), videoUrl: asset.previewUrl, videoAssetId: asset.id } : item,
+              );
+            } else {
+              nextLive.heroVideoUrl = asset.previewUrl;
+            }
+          } else if (placement === "item_poster" && Array.isArray(nextLive.featured) && nextLive.featured.length > 0) {
+            nextLive.featured = nextLive.featured.map((item, itemIndex) =>
+              itemIndex === 0 ? { ...(toRecord(item) ?? {}), posterUrl: asset.previewUrl, posterAssetId: asset.id } : item,
+            );
+          } else {
+            nextLive.heroImageUrl = asset.previewUrl;
+            nextLive.heroImageAssetId = asset.id;
+          }
+        }
+
+        nextDeal.live = nextLive;
+      }
+
+      return nextDeal;
+    });
+
+    await creatorApi.updateDealzMarketplace({
+      ...workspace,
+      deals: nextDeals,
+      selectedId: toStringValue(workspace.selectedId, dealId) || dealId,
+    });
+  }
+
   async function submitForReview() {
     // Validate basics
-    const missingRights = !submitDraft.rightsConfirmed || !submitDraft.noCopyrightedMusicConfirmed;
+    const missingRights =
+      !submitDraft.rightsConfirmed ||
+      !submitDraft.noCopyrightedMusicConfirmed ||
+      !submitDraft.disclosureConfirmed;
     const hasAnyMedia = submitDraft.mediaType === "link" ? Boolean(submitDraft.linkUrl.trim()) : submitDraft.files.length > 0;
 
     const isHeroImage = submitDraft.mediaType === "image" && submitDraft.role === "hero";
@@ -1806,7 +1967,7 @@ export default function AssetLibraryPage() {
       }
     }
 
-    const finalStatus: ReviewStatus = "approved";
+    const finalStatus: ReviewStatus = adminMode ? "approved" : supplierAutoApprove ? "pending_admin" : "pending_supplier";
     setSubmitStatus(finalStatus);
 
     const subtitle = [selectedCampaign?.name, selectedSupplier?.name].filter(Boolean).join(" · ");
@@ -1830,7 +1991,7 @@ export default function AssetLibraryPage() {
       mediaType: submitDraft.mediaType,
       source: "creator",
       ownerLabel: "Owner: Creator",
-      status: finalStatus,
+      reviewStage: finalStatus,
       role: submitDraft.role || (submitDraft.mediaType === "video" ? "hero" : ""),
       usageNotes: submitDraft.notes || "",
       restrictions: "Pending review.",
@@ -1859,14 +2020,20 @@ export default function AssetLibraryPage() {
     };
 
     try {
+      const createdAssets: AssetRecord[] = [];
+      const persistedCampaignId = normalizeBackendCampaignId(submitDraft.campaignId);
+
       if (submitDraft.mediaType === "link") {
-        await creatorApi.createMediaAsset({
-          name: resolvedTitle,
-          kind: "link",
-          mimeType: "text/uri-list",
-          url: submitDraft.linkUrl.trim(),
-          metadata,
-        });
+        createdAssets.push(
+          await creatorApi.createAsset({
+            campaignId: persistedCampaignId,
+            title: resolvedTitle,
+            assetType: "link",
+            mimeType: "text/uri-list",
+            url: submitDraft.linkUrl.trim(),
+            metadata,
+          }),
+        );
       } else {
         for (const file of submitDraft.files) {
           const preparedUpload = submitDraft.mediaType === "image" && isHeroImage
@@ -1880,7 +2047,7 @@ export default function AssetLibraryPage() {
             : file.name.includes(".")
               ? file.name.split(".").pop()
               : undefined;
-          await creatorApi.uploadMediaFile({
+          const uploaded = await creatorApi.uploadMediaFile({
             name: preparedUpload?.name || file.name || submitDraft.title || "submission",
             dataUrl,
             kind: submitDraft.mediaType,
@@ -1891,13 +2058,53 @@ export default function AssetLibraryPage() {
             purpose: "asset_library",
             metadata,
           });
+          createdAssets.push(
+            await creatorApi.createAsset({
+              campaignId: persistedCampaignId,
+              title: resolvedTitle || uploaded.name || file.name || "submission",
+              assetType: submitDraft.mediaType,
+              mimeType: uploaded.mimeType || preparedUpload?.mimeType || file.type || undefined,
+              sizeBytes: uploaded.sizeBytes || preparedUpload?.sizeBytes || file.size || undefined,
+              extension: uploaded.extension || extension,
+              checksum: typeof uploaded.checksum === "string" ? uploaded.checksum : undefined,
+              storageProvider: typeof uploaded.storageProvider === "string" ? uploaded.storageProvider : undefined,
+              storageKey: typeof uploaded.storageKey === "string" ? uploaded.storageKey : undefined,
+              url: uploaded.url || undefined,
+              metadata,
+            }),
+          );
         }
+      }
+
+      if (adminMode) {
+        await Promise.all(
+          createdAssets.map((asset) =>
+            creatorApi.reviewAsset(asset.id, {
+              status: "APPROVED",
+              reviewNotes: "Approved from Asset Library admin mode.",
+            }),
+          ),
+        );
+      } else if (supplierAutoApprove) {
+        await Promise.all(
+          createdAssets.map((asset) =>
+            creatorApi.reviewAsset(asset.id, {
+              status: "IN_REVIEW",
+              reviewNotes: "Supplier auto-approved; queued for admin review.",
+            }),
+          ),
+        );
       }
 
       await loadLibraryFromBackend();
       setToast({
-        title: "Asset ready",
-        body: "Your upload was approved automatically and is ready to attach/use in builders.",
+        title: finalStatus === "approved" ? "Asset approved" : "Asset submitted",
+        body:
+          finalStatus === "approved"
+            ? "Your asset is approved and ready to use in builders."
+            : finalStatus === "pending_admin"
+              ? "Your asset is waiting for admin review."
+              : "Your asset is waiting for supplier review.",
       });
       setIsSubmitOpen(false);
       setTimeout(() => resetSubmitDraft(), 250);
@@ -1961,23 +2168,50 @@ export default function AssetLibraryPage() {
       return;
     }
 
-    // Library-mode: attach to a deal (demo)
+    // Library-mode: persist attachment to the deal workspace
     if (!dealId) {
       setToast({ title: "No deal context", body: "Open Asset Library from a deal to attach items." });
       return;
     }
 
-    setToast({ title: "Attached to deal", body: `${activeAsset.title} attached to deal ${dealId}.` });
+    void persistAssetToDeal(activeAsset, "attach")
+      .then(() => {
+        setToast({ title: "Attached to deal", body: `${activeAsset.title} attached to deal ${dealId}.` });
+      })
+      .catch((error) => {
+        setToast({
+          title: "Could not attach asset",
+          body: error instanceof Error ? error.message : "Failed to save the asset to this deal.",
+        });
+      });
   }
 
   function useInAdz() {
     if (!activeAsset) return;
-    setToast({ title: "Sent to Ad Builder", body: `${activeAsset.title} selected for Shoppable Adz creative.` });
+    void persistAssetToDeal(activeAsset, "adz")
+      .then(() => {
+        setToast({ title: "Saved to Ad Builder", body: `${activeAsset.title} is now saved into the deal's Shoppable Adz creative.` });
+      })
+      .catch((error) => {
+        setToast({
+          title: "Could not save to Ad Builder",
+          body: error instanceof Error ? error.message : "Failed to save the asset into the deal's ad creative.",
+        });
+      });
   }
 
   function handleUseInLive() {
     if (!activeAsset) return;
-    setToast({ title: "Sent to Live Builder", body: `${activeAsset.title} selected for Live session creative.` });
+    void persistAssetToDeal(activeAsset, "live")
+      .then(() => {
+        setToast({ title: "Saved to Live Builder", body: `${activeAsset.title} is now saved into the deal's live creative.` });
+      })
+      .catch((error) => {
+        setToast({
+          title: "Could not save to Live Builder",
+          body: error instanceof Error ? error.message : "Failed to save the asset into the deal's live creative.",
+        });
+      });
   }
 
   const pendingPickAsset = useMemo(() => {
