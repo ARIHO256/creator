@@ -413,7 +413,10 @@ export class CommerceService {
 
   async listingWizard(userId: string) {
     const taxonomy = await this.taxonomyService.listingWizardTaxonomy();
-    const config = await this.getSellerListingWizardConfig();
+    const config = this.normalizeSellerListingWizardConfig(
+      await this.getSellerListingWizardConfig(),
+      taxonomy
+    );
     const page = await this.prisma.appRecord.findFirst({
       where: {
         userId,
@@ -1947,6 +1950,338 @@ export class CommerceService {
       updatedAt:
         typeof payload?.updatedAt === 'string' ? payload.updatedAt : new Date().toISOString()
     };
+  }
+
+  private normalizeSellerListingWizardConfig(payload: unknown, taxonomy: unknown[]) {
+    const source = this.asRecord(payload);
+    const markets = this.normalizeSellerListingWizardMarkets(source.markets, taxonomy);
+    const variantOptions = this.normalizeSellerListingWizardVariantOptions(source.variantOptions);
+    const steps = this.normalizeSellerListingWizardSteps(source.steps);
+    const initialForm = this.normalizeSellerListingWizardInitialForm(
+      source.initialForm,
+      markets,
+      variantOptions
+    );
+
+    return {
+      ...source,
+      markets,
+      steps,
+      variantOptions,
+      initialForm
+    };
+  }
+
+  private normalizeSellerListingWizardMarkets(value: unknown, taxonomy: unknown[]) {
+    const normalized = (Array.isArray(value) ? value : [])
+      .map((entry) => this.asRecord(entry))
+      .map((entry) => {
+        const name = this.readString(entry.name);
+        const fallbackId = this.slugify(this.readString(entry.slug) || name || 'market');
+        const id = this.readString(entry.id) || fallbackId;
+        if (!id || !name) {
+          return null;
+        }
+        return {
+          ...entry,
+          id,
+          name,
+          region: this.readString(entry.region) || name,
+          currency: this.readString(entry.currency) || 'USD'
+        };
+      })
+      .filter((entry) => entry !== null);
+
+    if (normalized.length > 0) {
+      return normalized;
+    }
+
+    const fromTaxonomy = (Array.isArray(taxonomy) ? taxonomy : [])
+      .map((entry) => this.asRecord(entry))
+      .filter((entry) => this.readString(entry.type).toLowerCase() === 'marketplace')
+      .map((entry) => {
+        const metadata = this.asRecord(entry.metadata);
+        const name = this.readString(entry.name);
+        const id = this.readString(entry.id) || this.slugify(name || 'market');
+        if (!id || !name) {
+          return null;
+        }
+        return {
+          id,
+          name,
+          region: this.readString(metadata.region) || name,
+          currency: this.readString(metadata.currency) || 'USD'
+        };
+      })
+      .filter((entry) => entry !== null);
+
+    if (fromTaxonomy.length > 0) {
+      return fromTaxonomy;
+    }
+
+    return [
+      {
+        id: 'evmart',
+        name: 'EVmart',
+        region: 'Global',
+        currency: 'USD'
+      }
+    ];
+  }
+
+  private normalizeSellerListingWizardSteps(value: unknown) {
+    const normalized = (Array.isArray(value) ? value : [])
+      .map((entry) => this.asRecord(entry))
+      .map((entry) => {
+        const id = this.readString(entry.id);
+        if (!id) {
+          return null;
+        }
+        const defaultType = ['pricing', 'warranty', 'inventory', 'delivery', 'seo'].includes(id)
+          ? 'standard'
+          : 'form';
+        return {
+          ...entry,
+          id,
+          label: this.readString(entry.label) || id,
+          description: this.readString(entry.description),
+          type: this.readString(entry.type) || defaultType,
+          requiredFields: Number.isFinite(Number(entry.requiredFields)) ? Number(entry.requiredFields) : 0,
+          optionalFields: Number.isFinite(Number(entry.optionalFields)) ? Number(entry.optionalFields) : 0
+        };
+      })
+      .filter((entry) => entry !== null);
+
+    if (normalized.length > 0) {
+      return normalized;
+    }
+
+    return [
+      { id: 'core', label: 'Core details', description: 'Vehicle basics and identity.', type: 'form', requiredFields: 6, optionalFields: 3 },
+      { id: 'preOwned', label: 'Pre-owned details', description: 'Condition details for used units.', type: 'form', requiredFields: 3, optionalFields: 2 },
+      { id: 'bev', label: 'Battery and range', description: 'EV battery, range and charging specs.', type: 'form', requiredFields: 4, optionalFields: 2 },
+      { id: 'extras', label: 'Extras and add-ons', description: 'Optional accessories and extras.', type: 'form', requiredFields: 0, optionalFields: 4 },
+      { id: 'gallery', label: 'Media gallery', description: 'Primary image and listing visuals.', type: 'form', requiredFields: 1, optionalFields: 2 },
+      { id: 'pricing', label: 'Pricing and tiers', description: 'Retail price and optional wholesale tiers.', type: 'standard', requiredFields: 2, optionalFields: 2 },
+      { id: 'warranty', label: 'Warranty', description: 'Warranty terms and duration.', type: 'standard', requiredFields: 1, optionalFields: 1 },
+      { id: 'inventory', label: 'Inventory', description: 'Variant stock and quantity levels.', type: 'standard', requiredFields: 1, optionalFields: 1 },
+      { id: 'delivery', label: 'Markets and delivery', description: 'Markets, delivery modes and regions.', type: 'standard', requiredFields: 3, optionalFields: 1 },
+      { id: 'seo', label: 'SEO and discoverability', description: 'Search title, description and keywords.', type: 'standard', requiredFields: 2, optionalFields: 2 }
+    ];
+  }
+
+  private normalizeSellerListingWizardVariantOptions(value: unknown) {
+    const source = this.asRecord(value);
+    return {
+      colors: this.normalizeStringArray(source.colors, ['Arctic White', 'Midnight Black', 'Graphite Gray', 'Ocean Blue']),
+      trims: this.normalizeStringArray(source.trims, ['Standard', 'Premium', 'Performance']),
+      batteries: this.normalizeStringArray(source.batteries, ['50 kWh', '75 kWh', '100 kWh']),
+      wheelSizes: this.normalizeStringArray(source.wheelSizes, ['17"', '18"', '19"']),
+      interiorColors: this.normalizeStringArray(source.interiorColors, ['Black', 'Beige', 'Gray'])
+    };
+  }
+
+  private normalizeSellerListingWizardInitialForm(
+    value: unknown,
+    markets: Array<Record<string, unknown>>,
+    variantOptions: {
+      colors: string[];
+      trims: string[];
+      batteries: string[];
+      wheelSizes: string[];
+      interiorColors: string[];
+    }
+  ) {
+    const source = this.asRecord(value);
+    const marketIds = markets
+      .map((market) => this.readString(market.id))
+      .filter(Boolean);
+    const sourceMarkets = this.asRecord(source.markets);
+    const sourceSelectedIds = Array.isArray(sourceMarkets.selectedIds)
+      ? sourceMarkets.selectedIds.map((entry) => this.readString(entry)).filter((id) => marketIds.includes(id))
+      : [];
+    const selectedIds =
+      sourceSelectedIds.length > 0
+        ? sourceSelectedIds
+        : this.readBoolean(sourceMarkets.allActive, true)
+          ? marketIds
+          : marketIds.slice(0, 1);
+
+    const defaultVariant = this.buildDefaultListingWizardVariant(0, variantOptions);
+    const variants = (Array.isArray(source.variants) ? source.variants : [])
+      .map((entry, index) => this.normalizeListingWizardVariant(entry, index, variantOptions))
+      .filter(Boolean);
+
+    const sourceDeliveryRegions = this.asRecord(source.deliveryRegions);
+    const sourceExtras = this.asRecord(source.extras);
+
+    return {
+      title: this.readFormString(source.title),
+      brand: this.readFormString(source.brand),
+      model: this.readFormString(source.model),
+      bodyType: this.readFormString(source.bodyType) || 'SUV',
+      powertrainType: this.readFormString(source.powertrainType) || 'BEV',
+      batteryCapacity: this.readFormString(source.batteryCapacity),
+      range: this.readFormString(source.range),
+      numPorts: this.readFormString(source.numPorts),
+      connectorType: this.readFormString(source.connectorType),
+      isUsed: this.readBoolean(source.isUsed, false),
+      mileage: this.readFormString(source.mileage),
+      owners: this.readFormString(source.owners),
+      serviceHistory: this.readFormString(source.serviceHistory),
+      hasWarranty: this.readBoolean(source.hasWarranty, false),
+      warrantyMonths: this.readFormString(source.warrantyMonths),
+      warrantyDetails: this.readFormString(source.warrantyDetails),
+      enableWholesale: this.readBoolean(source.enableWholesale, false),
+      price: this.readFormString(source.price),
+      currency: this.readFormString(source.currency) || 'USD',
+      keySellingPoint: this.readFormString(source.keySellingPoint),
+      extras: {
+        fastCharger: this.readBoolean(sourceExtras.fastCharger, false),
+        floorMats: this.readBoolean(sourceExtras.floorMats, false),
+        roofRack: this.readBoolean(sourceExtras.roofRack, false),
+        extendedWarranty: this.readBoolean(sourceExtras.extendedWarranty, false)
+      },
+      heroImageUploaded: this.readBoolean(source.heroImageUploaded, false),
+      variants: variants.length > 0 ? variants : [defaultVariant],
+      allowPickup: this.readBoolean(source.allowPickup, false),
+      allowDelivery: this.readBoolean(source.allowDelivery, false),
+      deliverToBuyerWarehouse: this.readBoolean(source.deliverToBuyerWarehouse, false),
+      deliveryRegions: {
+        local: this.readBoolean(sourceDeliveryRegions.local, false),
+        upcountry: this.readBoolean(sourceDeliveryRegions.upcountry, false),
+        crossBorder: this.readBoolean(sourceDeliveryRegions.crossBorder, false)
+      },
+      markets: {
+        allActive: selectedIds.length === marketIds.length && marketIds.length > 0,
+        selectedIds
+      },
+      seoTitle: this.readFormString(source.seoTitle),
+      seoDescription: this.readFormString(source.seoDescription),
+      seoAudience: this.readFormString(source.seoAudience),
+      seoKeywords: Array.isArray(source.seoKeywords)
+        ? source.seoKeywords.map((entry) => this.readString(entry)).filter(Boolean).join(', ')
+        : this.readFormString(source.seoKeywords)
+    };
+  }
+
+  private normalizeListingWizardVariant(
+    value: unknown,
+    index: number,
+    variantOptions: {
+      colors: string[];
+      trims: string[];
+      batteries: string[];
+      wheelSizes: string[];
+      interiorColors: string[];
+    }
+  ) {
+    const source = this.asRecord(value);
+    const defaults = this.buildDefaultListingWizardVariant(index, variantOptions);
+    const tiers = (Array.isArray(source.wholesaleTiers) ? source.wholesaleTiers : [])
+      .map((entry, tierIndex) => {
+        const tier = this.asRecord(entry);
+        return {
+          id: this.readFormString(tier.id) || `${defaults.id}-t${tierIndex + 1}`,
+          minQty: this.readFormString(tier.minQty),
+          maxQty: this.readFormString(tier.maxQty),
+          price: this.readFormString(tier.price),
+          isFinal: this.readBoolean(tier.isFinal, false)
+        };
+      })
+      .filter((tier) => tier.minQty || tier.maxQty || tier.price || tier.isFinal);
+
+    return {
+      ...defaults,
+      id: this.readFormString(source.id) || defaults.id,
+      name: this.readFormString(source.name) || defaults.name,
+      color: this.readFormString(source.color) || defaults.color,
+      trim: this.readFormString(source.trim) || defaults.trim,
+      battery: this.readFormString(source.battery) || defaults.battery,
+      wheelSize: this.readFormString(source.wheelSize) || defaults.wheelSize,
+      interiorColor: this.readFormString(source.interiorColor) || defaults.interiorColor,
+      price: this.readFormString(source.price),
+      stockQty: this.readFormString(source.stockQty),
+      sku: this.readFormString(source.sku),
+      warrantyMonths: this.readFormString(source.warrantyMonths),
+      wholesaleTiers: tiers.length > 0 ? tiers : defaults.wholesaleTiers
+    };
+  }
+
+  private buildDefaultListingWizardVariant(
+    index: number,
+    variantOptions: {
+      colors: string[];
+      trims: string[];
+      batteries: string[];
+      wheelSizes: string[];
+      interiorColors: string[];
+    }
+  ) {
+    const id = `variant-${index + 1}`;
+    return {
+      id,
+      name: index === 0 ? 'Standard' : `Variant ${index + 1}`,
+      color: variantOptions.colors[0] || '',
+      trim: variantOptions.trims[0] || '',
+      battery: variantOptions.batteries[0] || '',
+      wheelSize: variantOptions.wheelSizes[0] || '',
+      interiorColor: variantOptions.interiorColors[0] || '',
+      price: '',
+      stockQty: '',
+      sku: '',
+      warrantyMonths: '',
+      wholesaleTiers: [
+        {
+          id: `${id}-t1`,
+          minQty: '1',
+          maxQty: '10',
+          price: '',
+          isFinal: false
+        }
+      ]
+    };
+  }
+
+  private normalizeStringArray(value: unknown, fallback: string[]) {
+    const items = (Array.isArray(value) ? value : [])
+      .map((entry) => this.readString(entry))
+      .filter(Boolean);
+    return items.length > 0 ? items : fallback;
+  }
+
+  private readFormString(value: unknown) {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+    return '';
+  }
+
+  private readBoolean(value: unknown, fallback = false) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      return value !== 0;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
+      if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+    }
+    return fallback;
+  }
+
+  private slugify(value: string) {
+    const normalized = value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return normalized || 'value';
   }
 
   private async getSellerListingWizardConfig() {
