@@ -30,6 +30,7 @@ type PipelineHealth = "on-track" | "at-risk" | "stalled";
 
 type Campaign = {
   id: string;
+  sellerId?: string;
   name: string;
   seller: string;
   stage: StageId;
@@ -82,6 +83,7 @@ function toCampaign(record: CollaborationCampaignRecord): Campaign {
 
   return {
     id: record.id,
+    sellerId: typeof record.sellerId === "string" ? record.sellerId : undefined,
     name: String(record.title || ""),
     seller: String(record.seller || ""),
     stage,
@@ -338,6 +340,9 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
         recipientName={pitchRecipient?.seller || "New Supplier"}
         recipientInitials={pitchRecipient?.seller?.slice(0, 2).toUpperCase() || "??"}
         defaultCategory={pitchRecipient?.type || ""}
+        campaignId={pitchRecipient?.id}
+        campaignTitle={pitchRecipient?.name}
+        sellerId={pitchRecipient?.sellerId}
       />
     </div>
   );

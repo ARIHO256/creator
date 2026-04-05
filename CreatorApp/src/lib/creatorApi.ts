@@ -212,6 +212,8 @@ export type CollaborationCampaignRecord = {
   status?: string | null;
   budget?: number | null;
   currency?: string | null;
+  sellerId?: string | null;
+  creatorId?: string | null;
   seller?: string | null;
   creator?: string | null;
   startAt?: string | null;
@@ -251,6 +253,18 @@ export type ProposalRecord = {
   createdAt?: string | null;
   updatedAt?: string | null;
   [key: string]: unknown;
+};
+
+export type CreateProposalPayload = {
+  campaignId?: string;
+  sellerId?: string;
+  creatorId?: string;
+  title: string;
+  summary?: string;
+  amount?: number;
+  currency?: string;
+  status?: "DRAFT" | "SUBMITTED" | "IN_REVIEW" | "NEGOTIATING" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
+  metadata?: Record<string, unknown>;
 };
 
 export type ContractRecord = {
@@ -870,6 +884,9 @@ export const creatorApi = {
   },
   proposals() {
     return api.get<ProposalRecord[]>("/proposals");
+  },
+  createProposal(body: CreateProposalPayload) {
+    return api.post<ProposalRecord>("/proposals", body);
   },
   proposal(id: string) {
     return api.get<ProposalRecord>(`/proposals/${id}`);

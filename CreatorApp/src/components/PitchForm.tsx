@@ -1,14 +1,19 @@
 import React, { useState } from "react";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useNotification } from "../contexts/NotificationContext";
+import { creatorApi } from "../lib/creatorApi";
 
 type PitchFormProps = {
     recipientName: string;
     defaultCategory?: string;
     pitchMode?: boolean;
     aiSuggestion?: string;
+    campaignId?: string;
+    campaignTitle?: string;
+    sellerId?: string;
     onAskAi?: () => void;
     onClose?: () => void; // Optional: for auto-closing if desired (though success state handles it)
+    onSubmitted?: () => void;
 };
 
 export function PitchForm({
@@ -16,21 +21,50 @@ export function PitchForm({
     defaultCategory = "General",
     pitchMode = false,
     aiSuggestion,
+    campaignId,
+    campaignTitle,
+    sellerId,
     onAskAi,
+    onClose,
+    onSubmitted,
 }: PitchFormProps) {
     const [model, setModel] = useState("Hybrid");
     const [message, setMessage] = useState("");
     const { run, isPending: isSubmitting } = useAsyncAction();
-    const { showSuccess } = useNotification();
+    const { showError } = useNotification();
     const [isSuccess, setIsSuccess] = useState(false);
 
     const handleSubmit = () => {
         if (!message.trim()) return;
+        if (!campaignId && !sellerId) {
+            showError("Open pitch from a supplier or campaign so the backend knows who to send it to.");
+            return;
+        }
         run(async () => {
-            // Simulate API call
-            await new Promise(r => setTimeout(r, 1500));
+            const cleanCategory = defaultCategory.trim() || "General";
+            const trimmedMessage = message.trim();
+            await creatorApi.createProposal({
+                campaignId: campaignId || undefined,
+                sellerId: sellerId || undefined,
+                title: campaignTitle || `Pitch to ${recipientName || "supplier"}`,
+                summary: trimmedMessage,
+                currency: "USD",
+                status: "SUBMITTED",
+                metadata: {
+                    origin: "my-pitch",
+                    category: cleanCategory,
+                    offerType: model,
+                    notesShort: trimmedMessage.slice(0, 160),
+                    campaignTitle: campaignTitle || undefined,
+                    recipientName,
+                }
+            });
             setIsSuccess(true);
-        }, { successMessage: "Pitch Submitted! 🚀" });
+            onSubmitted?.();
+            if (onClose) {
+                window.setTimeout(() => onClose(), 900);
+            }
+        }, { successMessage: "Pitch submitted." });
     };
 
     return (
@@ -118,6 +152,12 @@ export function PitchForm({
                     </div>
                 )}
             </div>
+
+            {!campaignId && !sellerId ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+                    Choose a supplier or campaign first. Free-form pitches without a backend recipient are not supported yet.
+                </div>
+            ) : null}
 
             <button
                 className={`mt-1 w-full py-2 rounded-full text-white text-sm font-semibold transition-all ${isSubmitting

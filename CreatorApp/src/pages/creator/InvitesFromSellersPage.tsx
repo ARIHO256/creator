@@ -16,6 +16,8 @@ type InviteStatus = "New" | "In discussion" | "Accepted" | "Declined" | "Expired
 
 type Invite = {
   id: string;
+  sellerId?: string;
+  campaignId?: string;
   brand: string;
   initials: string;
   campaign: string;
@@ -121,6 +123,8 @@ function toInvite(record: InviteRecord): Invite {
 
   return {
     id: record.id,
+    sellerId: typeof record.sellerId === "string" ? record.sellerId : undefined,
+    campaignId: typeof record.campaignId === "string" ? record.campaignId : undefined,
     brand: String(record.seller || record.sender || ""),
     initials: sellerInitials(record.seller, record.sellerInitials),
     campaign: String(record.campaign || record.title || ""),
@@ -382,6 +386,9 @@ export function InvitesFromSellersPage() {
         recipientName={pitchRecipient?.brand || ""}
         recipientInitials={pitchRecipient?.initials || ""}
         defaultCategory={pitchRecipient?.category || ""}
+        campaignId={pitchRecipient?.campaignId}
+        campaignTitle={pitchRecipient?.campaign}
+        sellerId={pitchRecipient?.sellerId}
         aiSuggestion={
           pitchRecipient
             ? `Hi ${pitchRecipient.brand}, thanks for the invite to ${pitchRecipient.campaign}. I’d love to propose a hybrid model...`

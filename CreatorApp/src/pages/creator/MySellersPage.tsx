@@ -407,6 +407,7 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
         recipientName={pitchRecipient?.name || ""}
         recipientInitials={pitchRecipient?.initials || ""}
         defaultCategory={pitchRecipient?.categories?.[0] || ""}
+        sellerId={pitchRecipient?.apiId}
       />
     </div>
   );

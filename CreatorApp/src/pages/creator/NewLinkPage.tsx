@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, ReactNode, ChangeEvent } from "react"
 import { useApiResource } from "../../hooks/useApiResource"
 import { creatorApi, type AdzCampaignRecord, type AdzLinkRecord } from "../../lib/creatorApi"
+import { useAsyncAction } from "../../hooks/useAsyncAction"
 /*************************************************
  * Link Tools (Creator) - Previewable (Orange Primary)
  * Base: attached link_tools_creator_previewable.jsx
@@ -21,6 +22,8 @@ interface CampaignLink {
   id: string
   label: string
   url: string
+  status?: string
+  data?: Record<string, unknown>
 }
 
 interface Campaign {
@@ -32,6 +35,8 @@ interface Campaign {
   commissionPct: number
   surfaces: string[]
   links: CampaignLink[]
+  defaultUrl: string
+  liveUrl: string
 }
 
 declare global {
@@ -62,6 +67,7 @@ export interface LinkToolsDrawerProps {
   onClose: () => void
   /** Optional: open pre-selected campaign when launched from another surface. */
   initialCampaignId?: string
+  onSaved?: () => void
 }
 
 const cx = (...xs: (string | undefined | null | false)[]): string => xs.filter(Boolean).join(" ")
@@ -135,6 +141,35 @@ function shortLinkFromUrl(url: string | null | undefined): string {
   const h = hashString(url)
   const code = h.toString(36).slice(0, 7)
   return `https://mylivedealz.com/s/${code}`
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback
+}
+
+function inferCampaignSurfaces(data: Record<string, unknown>) {
+  if (Array.isArray(data.surfaces) && data.surfaces.length > 0) {
+    return data.surfaces.map((entry) => String(entry))
+  }
+  const marketplaceType = asString(data.marketplaceType).toLowerCase()
+  const hasLive = Boolean(asRecord(data.live).id) || Boolean(asString(data.promoLink || data.publicJoinUrl || data.livePromoLink))
+  const hasShoppable = Boolean(asString(data.shareLink || data.shareUrl || data.url)) || Boolean(asString(data.shortSlug)) || Boolean(asRecord(data.shoppable).id)
+  if (marketplaceType.includes("live") && marketplaceType.includes("shop")) {
+    return ["SHOPPABLE_ADZ", "LIVE_SESSIONZ"]
+  }
+  if (hasLive && hasShoppable) {
+    return ["SHOPPABLE_ADZ", "LIVE_SESSIONZ"]
+  }
+  if (hasLive) {
+    return ["LIVE_SESSIONZ"]
+  }
+  return ["SHOPPABLE_ADZ"]
 }
 
 
@@ -340,11 +375,15 @@ function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLink
       campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
         ? (campaign.data as Record<string, unknown>)
         : {}
+    const supplier = asRecord(data.supplier)
     const title = String(campaign.title || data.title || "Campaign")
     const slug = String(data.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))
-    const sellerName = String(data.sellerName || data.seller || "Seller")
-    const sellerHandle = String(data.sellerHandle || "")
+    const sellerName = asString(supplier.name, String(data.sellerName || data.seller || "Seller"))
+    const sellerHandle = asString(supplier.handle, String(data.sellerHandle || ""))
     const creatorRef = String(data.creatorRef || data.ref || "")
+    const defaultUrl = asString(data.shareLink || data.shareUrl || data.url, buildCreatorLink(slug, creatorRef))
+    const liveUrl = asString(data.promoLink || data.publicJoinUrl || data.livePromoLink, defaultUrl)
+    const surfaces = inferCampaignSurfaces(data)
     const linked = links.filter((link) => {
       const linkData =
         link.data && typeof link.data === "object" && !Array.isArray(link.data)
@@ -361,14 +400,20 @@ function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLink
           id: String(link.id || `link_${index}`),
           label: String(
             (link.data as Record<string, unknown> | undefined)?.label ||
+              (link.data as Record<string, unknown> | undefined)?.kind ||
               (link.data as Record<string, unknown> | undefined)?.channel ||
               `Link ${index + 1}`
           ),
           url: String(
             link.url ||
               (link.data as Record<string, unknown> | undefined)?.url ||
-              buildCreatorLink(slug, creatorRef)
-          )
+              defaultUrl
+          ),
+          status: typeof link.status === "string" ? link.status : undefined,
+          data:
+            link.data && typeof link.data === "object" && !Array.isArray(link.data)
+              ? (link.data as Record<string, unknown>)
+              : undefined
         }))
         .filter((entry) => entry.url.trim().length > 0)
       : []
@@ -381,18 +426,21 @@ function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLink
       seller: {
         name: sellerName,
         handle: sellerHandle,
-        verified: Boolean(data.sellerVerified)
+        verified: Boolean(data.sellerVerified || supplier.verified)
       },
       commissionPct: Number(data.commissionPct || data.commission || 0),
-      surfaces: Array.isArray(data.surfaces) ? data.surfaces.map((entry) => String(entry)) : ["SHOPPABLE_ADZ"],
-      links: mappedLinks
+      surfaces,
+      links: mappedLinks,
+      defaultUrl,
+      liveUrl
     }
   })
 }
 
 /************** Page **************/
-export function LinkToolsDrawer({ open, onClose, initialCampaignId }: LinkToolsDrawerProps) {
+export function LinkToolsDrawer({ open, onClose, initialCampaignId, onSaved }: LinkToolsDrawerProps) {
   const reducedMotion = usePrefersReducedMotion()
+  const { run, isPending: isSavingLink } = useAsyncAction()
 
 // Drawer behavior: lock background scroll + ESC to close
 useEffect(() => {
@@ -423,7 +471,7 @@ useEffect(() => {
     }
   }, [])
 
-  const { data: campaignOptions } = useApiResource<Campaign[]>({
+  const { data: campaignOptions, setData: setCampaignOptions, reload } = useApiResource<Campaign[]>({
     initialData: [],
     loader: async () => {
       const [campaigns, links] = await Promise.all([creatorApi.adzCampaigns(), creatorApi.adzLinks()])
@@ -447,7 +495,28 @@ useEffect(() => {
   }, [campaign])
 
   const linkItem = useMemo(() => (campaign?.links || []).find((l) => l.id === linkId) || null, [campaign, linkId])
-  const link = linkItem?.url || ""
+  const [draftLabel, setDraftLabel] = useState("")
+  const [draftUrl, setDraftUrl] = useState("")
+  const defaultDraftUrl = useMemo(() => {
+    if (!campaign) return ""
+    return (campaign.surfaces || []).includes("LIVE_SESSIONZ") ? campaign.liveUrl || campaign.defaultUrl : campaign.defaultUrl
+  }, [campaign])
+  const link = linkItem?.url || draftUrl
+
+  useEffect(() => {
+    if (!campaign) {
+      setDraftLabel("")
+      setDraftUrl("")
+      return
+    }
+    if (linkItem) {
+      setDraftLabel(linkItem.label || "Tracked link")
+      setDraftUrl(linkItem.url || defaultDraftUrl)
+      return
+    }
+    setDraftLabel((campaign.surfaces || []).includes("LIVE_SESSIONZ") ? "Live invite" : "Default link")
+    setDraftUrl(defaultDraftUrl)
+  }, [campaign, defaultDraftUrl, linkItem])
 
   // Share message
   const [message, setMessage] = useState("Check out these Dealz 👇")
@@ -478,8 +547,79 @@ useEffect(() => {
 
   const openLink = (u: string) => {
     if (!u) return
-    // TODO: Connect to real destination pages when they are built
-    showToast("Coming soon: Destination page")
+    try {
+      const opened = window.open(u, "_blank", "noopener,noreferrer")
+      if (!opened) showToast("Popup blocked")
+    } catch {
+      showToast("Could not open link")
+    }
+  }
+
+  const persistLink = (mode: "create" | "update") => {
+    if (!campaign) {
+      showToast("Select a campaign first")
+      return
+    }
+    if (!draftLabel.trim() || !draftUrl.trim()) {
+      showToast("Link label and URL are required")
+      return
+    }
+
+    run(async () => {
+      const surfaces = Array.isArray(campaign.surfaces) ? campaign.surfaces : []
+      const payload = {
+        status: "active",
+        url: draftUrl.trim(),
+        data: {
+          ...(linkItem?.data || {}),
+          label: draftLabel.trim(),
+          channel: draftLabel.trim(),
+          campaignId: campaign.id,
+          adzCampaignId: campaign.id,
+          title: campaign.title,
+          shortUrl: shortLinkFromUrl(draftUrl.trim()),
+          kind:
+            surfaces.includes("LIVE_SESSIONZ") && draftUrl.trim() === campaign.liveUrl
+              ? "promo"
+              : "share",
+          source: "link-tools-drawer",
+          sellerName: campaign.seller.name,
+          sellerHandle: campaign.seller.handle,
+          surfaces,
+          url: draftUrl.trim()
+        }
+      }
+      const saved =
+        mode === "update" && linkItem
+          ? await creatorApi.updateAdzLink(linkItem.id, payload)
+          : await creatorApi.createAdzLink(payload)
+
+      setCampaignOptions((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== campaign.id) return entry
+          const nextLink = {
+            id: saved.id,
+            label: draftLabel.trim(),
+            url: saved.url || draftUrl.trim(),
+            status: typeof saved.status === "string" ? saved.status : "active",
+            data:
+              saved.data && typeof saved.data === "object" && !Array.isArray(saved.data)
+                ? (saved.data as Record<string, unknown>)
+                : undefined
+          }
+          return {
+            ...entry,
+            links:
+              mode === "update" && linkItem
+                ? entry.links.map((existing) => (existing.id === linkItem.id ? nextLink : existing))
+                : [nextLink, ...entry.links]
+          }
+        })
+      )
+      setLinkId(saved.id)
+      await reload()
+      onSaved?.()
+    }, { successMessage: mode === "update" ? "Link updated." : "Link created." })
   }
 
   const copy = async (txt: string, label?: string) => {
@@ -606,6 +746,7 @@ useEffect(() => {
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setLinkId(e.target.value)}
                   className={cx("w-full appearance-none px-3 py-2 text-sm font-extrabold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 transition-colors", TOKENS.btn)}
                 >
+                  {!campaign?.links?.length ? <option value="">No saved variants yet</option> : null}
                   {(campaign?.links || []).map((l) => (
                     <option key={l.id} value={l.id}>{l.label}</option>
                   ))}
@@ -616,6 +757,46 @@ useEffect(() => {
           </div>
 
           <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50 p-3 transition-colors">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold">Variant label</div>
+                <input
+                  value={draftLabel}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setDraftLabel(e.target.value)}
+                  placeholder="e.g. WhatsApp Broadcast"
+                  className={cx(
+                    "mt-1 w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400",
+                    TOKENS.btn
+                  )}
+                />
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold">Destination URL</div>
+                <input
+                  value={draftUrl}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setDraftUrl(e.target.value)}
+                  placeholder={campaign?.defaultUrl || "https://mylivedealz.com/..."}
+                  className={cx(
+                    "mt-1 w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400",
+                    TOKENS.btn
+                  )}
+                />
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+              <Button variant="primary" onClick={() => persistLink(linkItem ? "update" : "create")} disabled={!campaign || isSavingLink} title={linkItem ? "Update saved link" : "Create saved link"}>
+                <Icon.Link className="w-4 h-4" /> {isSavingLink ? "Saving..." : linkItem ? "Update saved link" : "Create saved link"}
+              </Button>
+              <Button variant="neutral" onClick={() => persistLink("create")} disabled={!campaign || isSavingLink} title="Create a new saved variant">
+                <Icon.Copy className="w-4 h-4" /> Create new variant
+              </Button>
+            </div>
+            <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              {linkItem
+                ? `Editing persisted variant ${linkItem.label}.`
+                : "No persisted variant selected. Saving will create a real backend link record."}
+            </div>
+
             <div className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold">Main link</div>
             <div className="mt-1 text-[12px] font-extrabold text-slate-900 dark:text-slate-100 break-all">{link || "—"}</div>
 

@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { randomUUID } from 'crypto';
 import { CampaignStatus, Prisma } from '@prisma/client';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
-import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
+import { normalizeIdentifier, sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CloseProposalNegotiationRoomDto } from './dto/close-proposal-negotiation-room.dto.js';
 import { CreateAssetDto } from './dto/create-asset.dto.js';
@@ -41,6 +41,8 @@ export class CollaborationService {
 
     return campaigns.map((campaign: any) => ({
       id: campaign.id,
+      sellerId: campaign.sellerId,
+      creatorId: campaign.creatorId,
       title: campaign.title,
       description: campaign.description,
       status: campaign.status,
@@ -191,6 +193,8 @@ export class CollaborationService {
       }
     });
 
+    await this.syncDealzMarketplaceMaterializedRecords(userId, next);
+
     return next;
   }
 
@@ -288,6 +292,522 @@ export class CollaborationService {
     });
 
     return (created.payload as Record<string, unknown>) ?? emptyState;
+  }
+
+  private async syncDealzMarketplaceMaterializedRecords(userId: string, payload: Record<string, unknown>) {
+    const actor = await this.loadActor(userId);
+    const deals = Array.isArray(payload.deals)
+      ? payload.deals.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry))
+      : [];
+
+    for (const deal of deals) {
+      await this.syncDealzMarketplaceDeal(userId, actor, deal);
+    }
+  }
+
+  private async syncDealzMarketplaceDeal(userId: string, actor: any, deal: Record<string, unknown>) {
+    const dealId = this.readMarketplaceString(deal.id);
+    if (!dealId) {
+      return;
+    }
+
+    const supplier = this.readMarketplaceRecord(deal.supplier);
+    const creator = this.readMarketplaceRecord(deal.creator);
+    const shoppable = this.readMarketplaceOptionalRecord(deal.shoppable);
+    const live = this.readMarketplaceOptionalRecord(deal.live);
+    const sellerId = await this.resolveMarketplaceSellerId(supplier, actor);
+
+    if (!sellerId) {
+      this.logger.warn(`Skipping materialization for deal ${dealId}: unable to resolve seller profile.`);
+      return;
+    }
+
+    const marketplaceType = this.resolveMarketplaceDealType(deal, shoppable, live);
+    const title =
+      this.readMarketplaceString(deal.title) ||
+      this.readMarketplaceString(shoppable?.campaignName) ||
+      this.readMarketplaceString(live?.title) ||
+      'Untitled campaign';
+    const tagline =
+      this.readMarketplaceString(deal.tagline) ||
+      this.readMarketplaceString(shoppable?.campaignSubtitle) ||
+      this.readMarketplaceString(live?.description);
+    const budget = this.readMarketplaceNumber(
+      shoppable?.budget,
+      this.readMarketplaceNumber(deal.budget, null)
+    );
+    const currency =
+      this.readMarketplaceString(shoppable?.currency) ||
+      this.readMarketplaceString(deal.currency) ||
+      'USD';
+    const startAt =
+      this.parseMarketplaceDate(deal.startISO) ||
+      this.parseMarketplaceDate(shoppable?.startISO) ||
+      this.parseMarketplaceDate(live?.startISO);
+    const endAt =
+      this.parseMarketplaceDate(deal.endISO) ||
+      this.parseMarketplaceDate(shoppable?.endISO) ||
+      this.parseMarketplaceDate(live?.endISO);
+    const metadata = sanitizePayload(
+      {
+        source: 'dealz-marketplace',
+        marketplaceType,
+        tagline,
+        notes: this.readMarketplaceString(deal.notes),
+        supplier,
+        creator,
+        shoppable: shoppable ?? undefined,
+        live: live ?? undefined
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Record<string, unknown>;
+
+    await this.prisma.campaign.upsert({
+      where: { id: dealId },
+      update: {
+        sellerId,
+        creatorId: actor.creatorProfile ? userId : null,
+        createdByUserId: userId,
+        title,
+        description: tagline || null,
+        status: this.resolveMarketplaceCampaignStatus(shoppable, live),
+        budget,
+        currency,
+        metadata: metadata as Prisma.InputJsonValue,
+        startAt,
+        endAt
+      },
+      create: {
+        id: dealId,
+        sellerId,
+        creatorId: actor.creatorProfile ? userId : null,
+        createdByUserId: userId,
+        title,
+        description: tagline || null,
+        status: this.resolveMarketplaceCampaignStatus(shoppable, live),
+        budget,
+        currency,
+        metadata: metadata as Prisma.InputJsonValue,
+        startAt,
+        endAt
+      }
+    });
+
+    await this.syncCampaignGiveaways(dealId, metadata);
+
+    if (shoppable) {
+      await this.upsertMarketplaceAdzBuilder(userId, dealId, title, shoppable, supplier, creator);
+      await this.upsertMarketplaceAdzCampaign(userId, dealId, title, currency, marketplaceType, supplier, creator, shoppable);
+      await this.upsertMarketplaceAdzPerformance(dealId, shoppable);
+    } else {
+      await this.prisma.adzPerformance.deleteMany({
+        where: { campaignId: dealId }
+      });
+      await this.prisma.adzCampaign.deleteMany({
+        where: { id: dealId, userId }
+      });
+      await this.prisma.adzBuilder.deleteMany({
+        where: { id: this.resolveMarketplaceAdzBuilderId(userId, dealId), userId }
+      });
+    }
+
+    if (live) {
+      await this.upsertMarketplaceLiveSession(userId, dealId, title, sellerId, creator, live);
+    } else {
+      await this.prisma.liveSession.deleteMany({
+        where: { id: dealId, userId }
+      });
+    }
+
+    await this.syncMarketplaceLinks(userId, dealId, title, marketplaceType, supplier, creator, shoppable, live);
+  }
+
+  private async resolveMarketplaceSellerId(supplier: Record<string, unknown>, actor: any) {
+    const supplierId = this.readMarketplaceString(supplier.id);
+    if (supplierId) {
+      const seller = await this.prisma.seller.findUnique({
+        where: { id: supplierId },
+        select: { id: true }
+      });
+      if (seller?.id) {
+        return seller.id;
+      }
+    }
+
+    return actor.sellerProfile?.id ?? null;
+  }
+
+  private resolveMarketplaceDealType(
+    deal: Record<string, unknown>,
+    shoppable: Record<string, unknown> | null,
+    live: Record<string, unknown> | null
+  ) {
+    const raw = this.readMarketplaceString(deal.type);
+    if (raw === 'Shoppable Adz' || raw === 'Live Sessionz' || raw === 'Live + Shoppables') {
+      return raw;
+    }
+    if (shoppable && live) {
+      return 'Live + Shoppables';
+    }
+    if (shoppable) {
+      return 'Shoppable Adz';
+    }
+    if (live) {
+      return 'Live Sessionz';
+    }
+    return 'Shoppable Adz';
+  }
+
+  private resolveMarketplaceCampaignStatus(
+    shoppable: Record<string, unknown> | null,
+    live: Record<string, unknown> | null
+  ) {
+    const liveStatus = this.normalizeMarketplaceLiveStatus(live?.status);
+    const adzStatus = this.normalizeMarketplaceAdzStatus(shoppable?.status);
+
+    if (liveStatus === 'live' || liveStatus === 'scheduled' || adzStatus === 'generated') {
+      return CampaignStatus.ACTIVE;
+    }
+    if (liveStatus === 'ended') {
+      return CampaignStatus.COMPLETED;
+    }
+    return CampaignStatus.DRAFT;
+  }
+
+  private normalizeMarketplaceAdzStatus(value: unknown) {
+    const normalized = this.readMarketplaceString(value).toLowerCase();
+    if (normalized === 'generated' || normalized === 'active' || normalized === 'live' || normalized === 'scheduled') {
+      return 'generated';
+    }
+    return 'draft';
+  }
+
+  private normalizeMarketplaceLiveStatus(value: unknown) {
+    const normalized = this.readMarketplaceString(value).toLowerCase();
+    if (normalized === 'scheduled') {
+      return 'scheduled';
+    }
+    if (normalized === 'live') {
+      return 'live';
+    }
+    if (normalized === 'ended') {
+      return 'ended';
+    }
+    return 'draft';
+  }
+
+  private async upsertMarketplaceAdzBuilder(
+    userId: string,
+    dealId: string,
+    title: string,
+    shoppable: Record<string, unknown>,
+    supplier: Record<string, unknown>,
+    creator: Record<string, unknown>
+  ) {
+    const data = sanitizePayload(
+      {
+        ...shoppable,
+        id: dealId,
+        title,
+        supplier,
+        creator
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    );
+    const status = this.normalizeMarketplaceAdzStatus(shoppable.status);
+    await this.prisma.adzBuilder.upsert({
+      where: { id: this.resolveMarketplaceAdzBuilderId(userId, dealId) },
+      update: {
+        status,
+        published: status === 'generated',
+        publishedAt: status === 'generated' ? new Date() : null,
+        data: data as Prisma.InputJsonValue
+      },
+      create: {
+        id: this.resolveMarketplaceAdzBuilderId(userId, dealId),
+        userId,
+        status,
+        published: status === 'generated',
+        publishedAt: status === 'generated' ? new Date() : null,
+        data: data as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async upsertMarketplaceAdzCampaign(
+    userId: string,
+    dealId: string,
+    title: string,
+    currency: string,
+    marketplaceType: string,
+    supplier: Record<string, unknown>,
+    creator: Record<string, unknown>,
+    shoppable: Record<string, unknown>
+  ) {
+    const data = sanitizePayload(
+      {
+        ...shoppable,
+        id: dealId,
+        title,
+        campaignId: dealId,
+        sourceCampaignId: dealId,
+        isMarketplace: true,
+        marketplaceType,
+        supplier,
+        creator
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    );
+    const budget = this.readMarketplaceNumber(
+      shoppable.budget,
+      this.extractMarketplaceMetricNumber(shoppable, ['budget', 'spend'])
+    );
+
+    await this.prisma.adzCampaign.upsert({
+      where: { id: dealId },
+      update: {
+        userId,
+        status: this.normalizeMarketplaceAdzStatus(shoppable.status),
+        title,
+        budget,
+        currency: this.readMarketplaceString(shoppable.currency) || currency,
+        isMarketplace: true,
+        data: data as Prisma.InputJsonValue
+      },
+      create: {
+        id: dealId,
+        userId,
+        status: this.normalizeMarketplaceAdzStatus(shoppable.status),
+        title,
+        budget,
+        currency: this.readMarketplaceString(shoppable.currency) || currency,
+        isMarketplace: true,
+        data: data as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async upsertMarketplaceAdzPerformance(dealId: string, shoppable: Record<string, unknown>) {
+    const clicks = this.readMarketplaceNumber(
+      shoppable.clicks7d,
+      this.extractMarketplaceMetricNumber(shoppable, ['click'])
+    ) ?? 0;
+    const purchases = this.readMarketplaceNumber(
+      shoppable.orders7d,
+      this.extractMarketplaceMetricNumber(shoppable, ['order', 'purchase', 'sale'])
+    ) ?? 0;
+    const earnings = this.readMarketplaceNumber(
+      shoppable.revenue7d,
+      this.extractMarketplaceMetricNumber(shoppable, ['revenue', 'earn', 'gmv'])
+    ) ?? 0;
+    const impressions = this.readMarketplaceNumber(
+      shoppable.impressions7d,
+      this.extractMarketplaceMetricNumber(shoppable, ['impression', 'view'])
+    ) ?? 0;
+    const data = sanitizePayload(
+      {
+        impressions7d: impressions,
+        clicks7d: clicks,
+        orders7d: purchases,
+        revenue7d: earnings,
+        kpis: Array.isArray(shoppable.kpis) ? shoppable.kpis : []
+      },
+      { maxDepth: 6, maxArrayLength: 100, maxKeys: 100 }
+    );
+
+    await this.prisma.adzPerformance.upsert({
+      where: { campaignId: dealId },
+      update: {
+        clicks,
+        purchases,
+        earnings,
+        data: data as Prisma.InputJsonValue
+      },
+      create: {
+        campaignId: dealId,
+        clicks,
+        purchases,
+        earnings,
+        data: data as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async upsertMarketplaceLiveSession(
+    userId: string,
+    dealId: string,
+    title: string,
+    sellerId: string,
+    creator: Record<string, unknown>,
+    live: Record<string, unknown>
+  ) {
+    const data = sanitizePayload(
+      {
+        ...live,
+        id: dealId,
+        campaignId: dealId,
+        campaignTitle: title,
+        supplierId: sellerId,
+        hostId: this.readMarketplaceString(creator.id) || userId,
+        hostRole: 'Creator'
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    );
+    const scheduledAt = this.parseMarketplaceDate(live.startISO);
+    const startedAt = this.normalizeMarketplaceLiveStatus(live.status) === 'live'
+      ? this.parseMarketplaceDate(live.startISO) ?? new Date()
+      : null;
+    const endedAt = this.normalizeMarketplaceLiveStatus(live.status) === 'ended'
+      ? this.parseMarketplaceDate(live.endISO) ?? new Date()
+      : null;
+
+    await this.prisma.liveSession.upsert({
+      where: { id: dealId },
+      update: {
+        userId,
+        status: this.normalizeMarketplaceLiveStatus(live.status),
+        title: this.readMarketplaceString(live.title) || title,
+        scheduledAt,
+        startedAt,
+        endedAt,
+        data: data as Prisma.InputJsonValue
+      },
+      create: {
+        id: dealId,
+        userId,
+        status: this.normalizeMarketplaceLiveStatus(live.status),
+        title: this.readMarketplaceString(live.title) || title,
+        scheduledAt,
+        startedAt,
+        endedAt,
+        data: data as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async syncMarketplaceLinks(
+    userId: string,
+    dealId: string,
+    title: string,
+    marketplaceType: string,
+    supplier: Record<string, unknown>,
+    creator: Record<string, unknown>,
+    shoppable: Record<string, unknown> | null,
+    live: Record<string, unknown> | null
+  ) {
+    const linkEntries = [
+      {
+        id: `${dealId}_share`,
+        kind: 'share',
+        url: this.readMarketplaceString(shoppable?.shareLink)
+      },
+      {
+        id: `${dealId}_landing`,
+        kind: 'landing',
+        url: this.readMarketplaceString(shoppable?.landingUrl)
+      },
+      {
+        id: `${dealId}_promo`,
+        kind: 'promo',
+        url: this.readMarketplaceString(live?.promoLink)
+      }
+    ].filter((entry) => entry.url);
+
+    await this.prisma.adzLink.deleteMany({
+      where: {
+        userId,
+        id: {
+          in: [`${dealId}_share`, `${dealId}_landing`, `${dealId}_promo`]
+        }
+      }
+    });
+
+    for (const entry of linkEntries) {
+      await this.prisma.adzLink.create({
+        data: {
+          id: entry.id,
+          userId,
+          status: 'active',
+          url: entry.url,
+          data: sanitizePayload(
+            {
+              kind: entry.kind,
+              title,
+              source: 'dealz-marketplace',
+              dealId,
+              campaignId: dealId,
+              marketplaceType,
+              supplier,
+              creator,
+              shortDomain: this.readMarketplaceString(shoppable?.shortDomain),
+              shortSlug: this.readMarketplaceString(shoppable?.shortSlug)
+            },
+            { maxDepth: 6, maxArrayLength: 100, maxKeys: 100 }
+          ) as Prisma.InputJsonValue
+        }
+      });
+    }
+  }
+
+  private resolveMarketplaceAdzBuilderId(userId: string, dealId: string) {
+    return normalizeIdentifier(`adz-builder_${userId}_${dealId}`, randomUUID());
+  }
+
+  private readMarketplaceOptionalRecord(value: unknown) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  private readMarketplaceRecord(value: unknown) {
+    return this.readMarketplaceOptionalRecord(value) ?? {};
+  }
+
+  private readMarketplaceString(value: unknown) {
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
+  }
+
+  private parseMarketplaceDate(value: unknown) {
+    const raw = this.readMarketplaceString(value);
+    if (!raw) {
+      return null;
+    }
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  private readMarketplaceNumber(value: unknown, fallback: number | null = null) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const normalized = value.replace(/[^0-9.-]/g, '');
+      const parsed = Number(normalized);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return fallback;
+  }
+
+  private extractMarketplaceMetricNumber(source: Record<string, unknown>, labelHints: string[]) {
+    const kpis = Array.isArray(source.kpis) ? source.kpis : [];
+    for (const kpi of kpis) {
+      if (!kpi || typeof kpi !== 'object' || Array.isArray(kpi)) {
+        continue;
+      }
+      const record = kpi as Record<string, unknown>;
+      const label = this.readMarketplaceString(record.label).toLowerCase();
+      if (!label || !labelHints.some((hint) => label.includes(hint))) {
+        continue;
+      }
+      const value = this.readMarketplaceNumber(record.value, null);
+      if (value !== null) {
+        return value;
+      }
+    }
+    return null;
   }
 
   async createCampaign(userId: string, payload: Record<string, unknown>) {

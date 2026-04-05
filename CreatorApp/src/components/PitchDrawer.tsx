@@ -9,6 +9,9 @@ type PitchDrawerProps = {
     recipientInitials: string;
     recipientRegion?: string;
     defaultCategory?: string;
+    campaignId?: string;
+    campaignTitle?: string;
+    sellerId?: string;
     aiSuggestion?: string;
     onAskAi?: () => void;
 };
@@ -20,6 +23,9 @@ export function PitchDrawer({
     recipientInitials,
     recipientRegion,
     defaultCategory,
+    campaignId,
+    campaignTitle,
+    sellerId,
 }: PitchDrawerProps) {
     const [aiSuggestion, setAiSuggestion] = useState("");
     const { run, isPending: _isAiLoading } = useAsyncAction();
@@ -91,6 +97,9 @@ export function PitchDrawer({
                         <PitchForm
                             recipientName={recipientName}
                             defaultCategory={defaultCategory}
+                            campaignId={campaignId}
+                            campaignTitle={campaignTitle}
+                            sellerId={sellerId}
                             aiSuggestion={aiSuggestion}
                             onAskAi={handleAskAi}
                             onClose={onClose}

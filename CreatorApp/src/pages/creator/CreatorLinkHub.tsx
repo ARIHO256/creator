@@ -112,14 +112,18 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
         ? (campaign.data as Record<string, unknown>)
         : {};
-    const sellerName = String(data.supplierName || data.sellerName || data.seller || "");
+    const supplier =
+      data.supplier && typeof data.supplier === "object" && !Array.isArray(data.supplier)
+        ? (data.supplier as Record<string, unknown>)
+        : {};
+    const sellerName = String(supplier.name || data.supplierName || data.sellerName || data.seller || "");
     const supplierType: SupplierType =
-      String(data.supplierType || "").toLowerCase() === "provider" ? "Provider" : "Seller";
+      String(supplier.type || data.supplierType || "").toLowerCase() === "provider" ? "Provider" : "Seller";
     const titleBase = String(campaign.title || data.title || "");
     const status = mapCampaignStatusToLinkStatus(campaign.status || data.status);
-    const clicks = Number(data.clicks || 0);
-    const purchases = Number(data.purchases || 0);
-    const earnings = Number(data.earnings || 0);
+    const clicks = Number(data.clicks7d || data.clicks || 0);
+    const purchases = Number(data.orders7d || data.purchases || 0);
+    const earnings = Number(data.revenue7d || data.earnings || 0);
     const conversionPct = clicks > 0 ? Number(((purchases / clicks) * 100).toFixed(1)) : 0;
 
     const relatedLinks = links.filter((link) => {
@@ -133,7 +137,7 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       );
     });
 
-    const primaryUrl = String(data.shareUrl || `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`);
+    const primaryUrl = String(data.shareLink || data.shareUrl || `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`);
 
     const channels =
       relatedLinks.length > 0
@@ -142,7 +146,7 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
               link.data && typeof link.data === "object" && !Array.isArray(link.data)
                 ? (link.data as Record<string, unknown>)
                 : {};
-            const channel = String(linkData.channel || linkData.label || `Channel ${index + 1}`);
+            const channel = String(linkData.channel || linkData.label || linkData.kind || `Channel ${index + 1}`);
             return {
               name: channel,
               url: String(link.url || linkData.url || primaryUrl),
@@ -198,7 +202,11 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       }
     };
 
-    const surfaces = Array.isArray(data.surfaces) ? data.surfaces.map((entry) => String(entry).toUpperCase()) : [];
+    const surfaces = Array.isArray(data.surfaces)
+      ? data.surfaces.map((entry) => String(entry).toUpperCase())
+      : String(data.marketplaceType || "").toLowerCase().includes("live")
+        ? ["SHOPPABLE_ADZ", "LIVE_SESSIONZ"]
+        : ["SHOPPABLE_ADZ"];
     if (!surfaces.includes("LIVE_SESSIONZ")) {
       return [baseItem];
     }
@@ -237,7 +245,7 @@ export default function CreatorLinksHubV3Fixed({
 
   "suppliers include Sellers (suppliers of products) and Providers (service providers).";
 
-  const { data: items } = useApiResource<LinkItem[]>({
+  const { data: items, reload } = useApiResource<LinkItem[]>({
     initialData: [],
     loader: async () => {
       const [campaigns, links] = await Promise.all([creatorApi.adzCampaigns(), creatorApi.adzLinks()]);
@@ -564,6 +572,9 @@ export default function CreatorLinksHubV3Fixed({
         open={newLinkDrawerOpen}
         onClose={() => setNewLinkDrawerOpen(false)}
         initialCampaignId={selected?.campaign.id}
+        onSaved={() => {
+          void reload();
+        }}
       />
     </div>
   );
